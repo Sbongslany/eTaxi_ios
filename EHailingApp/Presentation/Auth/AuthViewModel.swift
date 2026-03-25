@@ -116,25 +116,14 @@ final class AuthViewModel: ObservableObject {
     }
 
     // MARK: - OTP Verify
-    func verifyOTP(code: String) async {
+        func verifyOTP(code: String) async {
         guard let uid = pendingUserId else { errorMessage = "Session error. Please start over."; return }
-        guard code.count == Constants.Auth.otpLength else { errorMessage = "Enter the 6-digit code"; return }
         isLoading = true; errorMessage = nil
         defer { isLoading = false }
         do {
             try await authRepo.verifyOTP(userId: uid, code: code)
-            // Refresh user
-            if let user = try? await authRepo.getMe() {
-                currentUser = user
-            }
-            if pendingRole == "driver" {
-                screen = .documents
-            } else {
-                screen = .passengerHome
-            }
-        } catch {
-            errorMessage = error.localizedDescription
-        }
+            screen = .login
+        } catch { errorMessage = error.localizedDescription }
     }
 
     func resendOTP() async {
