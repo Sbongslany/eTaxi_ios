@@ -2,6 +2,9 @@ import Foundation
 import CoreLocation
 import SwiftUI
 
+// NOTE: UserEntity, VehicleInfoEntity, DocumentDTO defined in Domain/Entities/User.swift
+// MapPin defined in Presentation/Shared/MapComponents.swift
+
 // MARK: - Shared response
 struct SuccessMsg: Decodable { let success: Bool; let message: String? }
 
@@ -50,12 +53,16 @@ struct BETrip: Identifiable, Decodable {
         }
     }
 
+    var passengerName:  String?
+    var driverEarnings: Double?
+
     enum CodingKeys: String, CodingKey {
         case id, status, rideType, pickupAddress, dropoffAddress
         case pickupLat, pickupLon, dropoffLat, dropoffLon
         case totalFare, estimatedDurationMin, estimatedDistanceKm
         case driverName, driverCode, vehicleInfo
         case scheduledAt, hireHours, hireDays, passengerId, driverId
+        case passengerName, driverEarnings
     }
 
     init(from decoder: Decoder) throws {
@@ -80,6 +87,8 @@ struct BETrip: Identifiable, Decodable {
         hireDays      = try? c.decode(Int.self, forKey: .hireDays)
         passengerId   = try? c.decode(String.self, forKey: .passengerId)
         driverId      = try? c.decode(String.self, forKey: .driverId)
+        passengerName = try? c.decode(String.self, forKey: .passengerName)
+        driverEarnings = Self.optDouble(c, .driverEarnings)
     }
 
     private static func flexDouble(_ c: KeyedDecodingContainer<CodingKeys>, _ k: CodingKeys) -> Double {
@@ -145,13 +154,26 @@ struct BEDriverProfile: Decodable {
     var acceptanceRate: Double
     var currentLat:     Double?
     var currentLon:     Double?
+    var isVerified:         Bool   { true } // dev: all drivers verified
+    var vehicleRegistration: String? { vehicleReg }
     var vehicleDisplay: String {
         [vehicleMake, vehicleModel, vehicleColor].compactMap { $0 }.joined(separator: " ")
     }
 }
 struct DriverProfileResponse: Decodable { let success: Bool; let profile: BEDriverProfile }
 
-struct BEEarnings: Decodable { let today: String?; let week: String?; let totalTrips: Int? }
+struct BEEarnings: Decodable {
+    let today: String?; let thisWeek: String?; let thisMonth: String?
+    let totalTrips: Int?; let totalEarned: String?; let avgPerTrip: String?
+    enum CodingKeys: String, CodingKey {
+        case today; case thisWeek = "week"; case thisMonth = "month"
+        case totalTrips = "total_trips"; case totalEarned = "total_earned"; case avgPerTrip = "avg_per_trip"
+    }
+    // Numeric helpers for display
+    var todayNum:      Double { parse(today) }
+    var totalEarnedNum:Double { parse(totalEarned) }
+    private func parse(_ s: String?) -> Double { Double(s?.replacingOccurrences(of:"R", with:"") ?? "0") ?? 0 }
+}
 struct EarningsResponse: Decodable { let success: Bool; let earnings: BEEarnings }
 
 // MARK: - Trip request overlay model (driver receives)

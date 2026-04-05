@@ -10,11 +10,11 @@ struct PassengerRoot: View {
         Group {
             switch vm.screen {
             case .serviceChoice:  PServiceChoiceView(vm: vm)
-            case .home:           PHomeView(vm: vm)
+            case .home:           PMainTabView(vm: vm)
             case .booking:        PBookingView(vm: vm)
-            case .findingDriver:  PFindingDriverView(vm: vm)
+            case .findingDriver:  PDriverMatchedView(vm: vm)
             case .inRide:         PInRideView(vm: vm)
-            case .tripComplete:   PTripCompleteView(vm: vm)
+            case .tripComplete:   PPaymentView(vm: vm)
             case .customHire:     PCustomHireView(vm: vm)
             case .hireConfirmed:  PHireConfirmedView(vm: vm)
             case .history:        PHistoryView(vm: vm)
@@ -26,992 +26,865 @@ struct PassengerRoot: View {
     }
 }
 
-// MARK: - Service Choice
-struct PServiceChoiceView: View {
+// MARK: - Main Tab View with floating draggable tab bar (matching ZipRide)
+struct PMainTabView: View {
     @ObservedObject var vm: PassengerViewModel
-    @State private var appeared = false
-    var body: some View {
-        ZStack {
-            Color.eBackground.ignoresSafeArea()
-            VStack(spacing: 0) {
-                Spacer()
-                ZStack {
-                    RoundedRectangle(cornerRadius: 20).fill(Color.eGreen).frame(width: 72, height: 72)
-                        .shadow(color: Color.eGreen.opacity(0.4), radius: 20, y: 6)
-                    Text("eT").font(.system(size: 26, weight: .black, design: .rounded)).foregroundColor(.black)
-                }
-                .scaleEffect(appeared ? 1 : 0.7).opacity(appeared ? 1 : 0).padding(.bottom, 24)
-                Text("How do you want\nto get around?")
-                    .font(EFont.display(30, weight: .heavy)).foregroundColor(.eText)
-                    .multilineTextAlignment(.center).opacity(appeared ? 1 : 0).padding(.bottom, 8)
-                Text("Choose your default service. You can always switch later.")
-                    .font(EFont.body(15)).foregroundColor(.eTextSoft).multilineTextAlignment(.center)
-                    .padding(.horizontal, 32).opacity(appeared ? 1 : 0).padding(.bottom, 40)
-                PServiceCard(emoji: "⚡️", emojiBg: Color.eGreen.opacity(0.18), title: "Standard Ride",
-                    badge: "POPULAR", badgeColor: .eGreen, desc: "On-demand metered trips",
-                    bullets: ["Pay per km + time","Driver arrives in minutes","Economy · Comfort · XL · Ladies"],
-                    borderColor: Color.eGreen.opacity(0.3)) { vm.selectPreference("standard") }
-                    .padding(.bottom, 16)
-                PServiceCard(emoji: "📅", emojiBg: Color(hex: "#3D2B8F").opacity(0.4), title: "Custom Hire",
-                    badge: "FLAT RATE", badgeColor: Color(hex: "#7B6FD8"), desc: "Flat-rate hourly & daily packages",
-                    bullets: ["Fixed price — no surprises","Hourly · Half day · Full day","Perfect for events & long trips"],
-                    borderColor: Color(hex: "#3D2B8F").opacity(0.5)) { vm.selectPreference("custom") }
-                    .padding(.bottom, 32)
-                Button { vm.selectPreference("standard") } label: {
-                    Text("Skip — use Standard for now").font(EFont.body(14)).foregroundColor(.eTextMuted)
-                }
-                Spacer()
-            }.padding(.horizontal, 20)
-        }
-        .onAppear { withAnimation(.spring(response: 0.6, dampingFraction: 0.8).delay(0.1)) { appeared = true } }
-    }
-}
-
-private struct PServiceCard: View {
-    let emoji: String; let emojiBg: Color; let title: String
-    let badge: String; let badgeColor: Color; let desc: String
-    let bullets: [String]; let borderColor: Color; let action: () -> Void
-    var body: some View {
-        Button(action: action) {
-            HStack(alignment: .top, spacing: 16) {
-                ZStack { RoundedRectangle(cornerRadius: 14).fill(emojiBg).frame(width: 52, height: 52); Text(emoji).font(.system(size: 26)) }
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 8) {
-                        Text(title).font(EFont.body(17, weight: .bold)).foregroundColor(.eText)
-                        Text(badge).font(EFont.body(10, weight: .bold)).foregroundColor(badgeColor)
-                            .padding(.horizontal, 8).padding(.vertical, 3).background(badgeColor.opacity(0.15)).clipShape(Capsule())
-                    }
-                    Text(desc).font(EFont.body(13)).foregroundColor(.eTextSoft)
-                    ForEach(bullets, id: \.self) { b in HStack(spacing: 8) { Circle().fill(badgeColor).frame(width: 5, height: 5); Text(b).font(EFont.body(12)).foregroundColor(.eTextSoft) } }
-                }
-                Spacer()
-                Image(systemName: "arrow.right").font(.system(size: 14, weight: .bold)).foregroundColor(.eText)
-                    .frame(width: 32, height: 32).background(badgeColor).clipShape(Circle())
-            }
-            .padding(18).background(Color.eSurface).clipShape(RoundedRectangle(cornerRadius: 20))
-            .overlay(RoundedRectangle(cornerRadius: 20).stroke(borderColor, lineWidth: 1.5))
-        }
-    }
-}
-
-// MARK: - Home
-struct PHomeView: View {
-    @ObservedObject var vm: PassengerViewModel
-    @StateObject private var locMgr = LocationManager.shared
-
     var body: some View {
         ZStack(alignment: .bottom) {
-            EHomeMap(nearbyPins: vm.nearbyPins)
-                .ignoresSafeArea()
-
-            VStack(spacing: 0) {
-                // Top bar
-                VStack(spacing: 0) {
-                    Color.clear.frame(height: 10)
-                    HStack {
-                        HStack(spacing: 0) {
-                            Text("e").font(EFont.display(20, weight: .heavy)).foregroundColor(.eText)
-                            Text("Taxi").font(EFont.display(20, weight: .heavy)).foregroundColor(.eGreen)
-                        }
-                        Spacer()
-                        Button { vm.screen = .profile } label: {
-                            ZStack {
-                                Circle().fill(Color.eGreen).frame(width: 38, height: 38)
-                                Text(vm.user.initials).font(EFont.body(14, weight: .bold)).foregroundColor(.black)
-                            }
-                        }
-                    }.padding(.horizontal, 20).padding(.vertical, 12)
-                    HStack(spacing: 8) {
-                        Circle().fill(Color.eGreen).frame(width: 8, height: 8)
-                        Text(locMgr.address).font(EFont.body(13)).foregroundColor(.eTextSoft).lineLimit(1)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 16).padding(.vertical, 10)
-                    .background(Color.eCard.opacity(0.92)).clipShape(Capsule())
-                    .overlay(Capsule().stroke(Color.eBorder, lineWidth: 1))
-                    .padding(.horizontal, 20).padding(.bottom, 10)
+            Group {
+                switch vm.selectedTab {
+                case 0:  PHomeMapView(vm: vm)
+                case 1:  PHistoryView(vm: vm)
+                case 2:  PWalletView(vm: vm)
+                default: PProfileView(vm: vm)
                 }
-                .background(LinearGradient(colors: [Color.eBackground.opacity(0.85), .clear], startPoint: .top, endPoint: .bottom))
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            PFloatingTabBar(vm: vm)
+        }
+        .background(Color.eBackground.ignoresSafeArea())
+        .ignoresSafeArea(edges: .bottom)
+    }
+}
+
+// MARK: - Floating Draggable Tab Bar (ZipRide ZRTabBar)
+struct PFloatingTabBar: View {
+    @ObservedObject var vm: PassengerViewModel
+    @State private var offsetX: CGFloat = 0; @State private var savedOffsetX: CGFloat = 0
+    @State private var offsetY: CGFloat = 0; @State private var savedOffsetY: CGFloat = 0
+    @State private var isDragging = false
+    private let barWidth: CGFloat = 280; private let barHeight: CGFloat = 64
+    private let tabs = [("map", "map.fill", "Ride"), ("clock", "clock.fill", "History"),
+                        ("creditcard", "creditcard.fill", "Wallet"), ("person", "person.fill", "Profile")]
+    var body: some View {
+        GeometryReader { geo in
+            tabContent
+                .frame(width: barWidth, height: barHeight)
+                .position(x: clampX(offsetX + geo.size.width/2, in: geo),
+                          y: clampY(offsetY + geo.size.height - 54, in: geo))
+                .gesture(DragGesture(minimumDistance: 4)
+                    .onChanged { val in isDragging = true; offsetX = savedOffsetX + val.translation.width; offsetY = savedOffsetY + val.translation.height }
+                    .onEnded { _ in
+                        isDragging = false; savedOffsetX = offsetX; savedOffsetY = offsetY
+                        withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
+                            let cx = clampX(offsetX + geo.size.width/2, in: geo)
+                            let cy = clampY(offsetY + geo.size.height - 54, in: geo)
+                            offsetX = cx - geo.size.width/2; offsetY = cy - (geo.size.height - 54)
+                        }
+                    })
+                .scaleEffect(isDragging ? 1.04 : 1.0).animation(.spring(response: 0.25), value: isDragging)
+        }.ignoresSafeArea()
+    }
+    private func clampX(_ x: CGFloat, in geo: GeometryProxy) -> CGFloat { min(max(x, barWidth/2+12), geo.size.width-barWidth/2-12) }
+    private func clampY(_ y: CGFloat, in geo: GeometryProxy) -> CGFloat { min(max(y, 100), geo.size.height-28) }
+    @ViewBuilder private var tabContent: some View {
+        HStack(spacing: 0) {
+            ForEach(tabs.indices, id: \.self) { i in
+                let (icon, filled, label) = tabs[i]; let sel = vm.selectedTab == i
+                Button {
+                    if !isDragging { withAnimation(.spring(response: 0.3)) { vm.selectedTab = i; if i==1 { Task { await vm.loadHistory() } } } }
+                } label: {
+                    VStack(spacing: 3) {
+                        ZStack {
+                            if sel { Capsule().fill(Color.eGreen.opacity(0.18)).frame(width: 44, height: 28) }
+                            Image(systemName: sel ? filled : icon).font(.system(size: 17, weight: sel ? .bold : .regular)).foregroundColor(sel ? .eGreen : .eTextMuted)
+                        }
+                        Text(label).font(.system(size: 9, weight: sel ? .bold : .medium)).foregroundColor(sel ? .eGreen : .eTextMuted)
+                    }.frame(maxWidth: .infinity)
+                }.buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 8).frame(height: barHeight)
+        .background(ZStack { Capsule().fill(Color.eCard); Capsule().fill(.ultraThinMaterial).opacity(0.4) }.shadow(color: .black.opacity(0.45), radius: 24, y: 8))
+        .overlay(Capsule().strokeBorder(LinearGradient(colors: [Color.eBorder.opacity(0.8), Color.eBorder.opacity(0.2)], startPoint: .topLeading, endPoint: .bottomTrailing), lineWidth: 1))
+    }
+}
+
+// MARK: - Home Map View (ZipRide HomeMapView)
+struct PHomeMapView: View {
+    @ObservedObject var vm: PassengerViewModel
+    @StateObject private var locMgr = LocationManager.shared
+    @State private var region = MKCoordinateRegion(center: .init(latitude: -26.1076, longitude: 28.0567), span: .init(latitudeDelta: 0.04, longitudeDelta: 0.04))
+    @State private var hasInitiallyCentred = false
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            Map(coordinateRegion: $region, showsUserLocation: true, annotationItems: vm.nearbyPins) { pin in
+                MapAnnotation(coordinate: pin.coord) { ECarPin() }
+            }.ignoresSafeArea()
+            VStack(spacing: 0) {
+                PHomeTopBar(vm: vm)
                 Spacer()
-                // Hire button
                 HStack {
                     Spacer()
                     Button { vm.syncPickup(); vm.screen = .customHire } label: {
                         HStack(spacing: 7) { Text("📅").font(.system(size: 17)); Text("Hire").font(EFont.body(13, weight: .bold)).foregroundColor(.white) }
-                            .padding(.horizontal, 16).padding(.vertical, 11)
-                            .background(Color(hex: "#6366F1")).clipShape(Capsule())
+                            .padding(.horizontal, 16).padding(.vertical, 11).background(Color(hex: "#6366F1")).clipShape(Capsule())
                             .shadow(color: Color(hex: "#6366F1").opacity(0.55), radius: 10, y: 4)
                     }.padding(.trailing, 16)
                 }.padding(.bottom, 310)
             }
-
-            // Bottom sheet
-            VStack(alignment: .leading, spacing: 0) {
-                ESheetHandle().padding(.top, 12).padding(.bottom, 18)
-                let h = Calendar.current.component(.hour, from: Date())
-                Text("Good \(h < 12 ? "morning" : h < 17 ? "afternoon" : "evening"), \(vm.user.firstName) 👋")
-                    .font(EFont.body(13)).foregroundColor(.eTextSoft).padding(.bottom, 4)
-                Text("Where to?").font(EFont.display(22, weight: .bold)).foregroundColor(.eText).padding(.bottom, 14)
-
-                Button { vm.syncPickup(); vm.dropoffAddress = ""; vm.dropoffCoord = nil; vm.estimates = [:]; vm.screen = .booking } label: {
-                    HStack(spacing: 12) {
-                        Image(systemName: "magnifyingglass").font(.system(size: 14, weight: .semibold)).foregroundColor(.eGreen)
-                        Text("Search destination…").font(EFont.body(15)).foregroundColor(.eTextMuted)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 16).padding(.vertical, 15).background(Color.eSurface)
-                    .clipShape(RoundedRectangle(cornerRadius: 12)).overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.eBorder, lineWidth: 1.5))
-                }.padding(.bottom, 12)
-
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        ForEach(PopularPlace.all.prefix(4)) { p in
-                            Button { vm.syncPickup(); vm.setPopular(p); vm.screen = .booking } label: {
-                                HStack(spacing: 6) { Text(p.emoji).font(.system(size: 15)); Text(p.name).font(EFont.body(13, weight: .semibold)).foregroundColor(.eText) }
-                                    .padding(.horizontal, 14).padding(.vertical, 8).background(Color.eSurface).clipShape(Capsule())
-                                    .overlay(Capsule().stroke(Color.eBorder, lineWidth: 1))
-                            }
-                        }
-                    }
-                }.padding(.bottom, 18)
-
-                if !vm.tripHistory.isEmpty {
-                    Text("RECENT PLACES").font(EFont.body(11, weight: .bold)).foregroundColor(.eTextMuted).kerning(0.8).padding(.bottom, 10)
-                    ForEach(Array(vm.tripHistory.prefix(2).enumerated()), id: \.element.id) { idx, trip in
-                        HStack(spacing: 12) {
-                            ZStack { RoundedRectangle(cornerRadius: 8).fill(Color.eSurface).frame(width: 38, height: 38); Text("📍").font(.system(size: 16)) }
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(trip.dropoffAddress).font(EFont.body(14, weight: .semibold)).foregroundColor(.eText).lineLimit(1)
-                                Text(trip.pickupAddress).font(EFont.body(12)).foregroundColor(.eTextMuted).lineLimit(1)
-                            }
-                            Spacer()
-                        }.padding(.vertical, 11)
-                        .onTapGesture {
-                            vm.syncPickup(); vm.dropoffAddress = trip.dropoffAddress
-                            geocode(trip.dropoffAddress) { c in if let c { vm.dropoffCoord = c; vm.screen = .booking; Task { await vm.fetchEstimates() } } }
-                        }
-                        if idx == 0 { Divider().background(Color.eBorder) }
-                    }
-                }
-            }
-            .padding(.horizontal, 20).padding(.bottom, 100)
-            .background(Color.eCard).clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-            .overlay(alignment: .top) { RoundedRectangle(cornerRadius: 28, style: .continuous).stroke(Color.eBorder, lineWidth: 1) }
-            .safeAreaInset(edge: .bottom) { PTabBar(vm: vm) }
+            PHomeBottomSheet(vm: vm)
         }
-        .ignoresSafeArea()
         .onAppear { locMgr.start() }
         .onChange(of: locMgr.coordinate) { coord in
             guard let coord else { return }
-            vm.pickupCoord   = coord
-            vm.pickupAddress = locMgr.address
+            if !hasInitiallyCentred || locMgr.accuracy < 50 {
+                withAnimation(.easeInOut(duration: 1.2)) { region.center = coord; region.span = .init(latitudeDelta: 0.012, longitudeDelta: 0.012) }
+                hasInitiallyCentred = true
+            }
+            vm.pickupCoord = coord; vm.pickupAddress = locMgr.address
         }
         .onChange(of: locMgr.address) { vm.pickupAddress = $0 }
         .task { await vm.loadServices() }
     }
 }
 
-private struct PTabBar: View {
+struct PHomeTopBar: View {
     @ObservedObject var vm: PassengerViewModel
+    @StateObject private var locMgr = LocationManager.shared
     var body: some View {
-        HStack {
-            ptab(0, icon: "map.fill",       label: "Ride",    target: .home)
-            ptab(1, icon: "clock.fill",      label: "History", target: .history)
-            ptab(2, icon: "creditcard.fill", label: "Wallet",  target: .wallet)
-            ptab(3, icon: "person.fill",     label: "Profile", target: .profile)
+        VStack(spacing: 0) {
+            Color.clear.frame(height: 10)
+            HStack {
+                HStack(spacing: 0) {
+                    Text("e").font(EFont.display(20, weight: .heavy)).foregroundColor(.eText)
+                    Text("Taxi").font(EFont.display(20, weight: .heavy)).foregroundColor(.eGreen)
+                }
+                Spacer()
+                Button { vm.selectedTab = 3 } label: {
+                    ZStack {
+                        Circle().fill(LinearGradient(colors: [.eGreen, Color(hex: "#00B85A")], startPoint: .topLeading, endPoint: .bottomTrailing)).frame(width: 38, height: 38)
+                        Text(vm.user.initials).font(EFont.body(14, weight: .bold)).foregroundColor(.black)
+                    }
+                }
+            }.padding(.horizontal, 20).padding(.vertical, 12)
+            HStack(spacing: 8) {
+                Circle().fill(Color.eGreen).frame(width: 8, height: 8)
+                Text("📍 \(locMgr.address)").font(EFont.body(13)).foregroundColor(.eTextSoft).lineLimit(1)
+                Spacer()
+                if locMgr.accuracy < 999 && locMgr.accuracy > 20 { Text("±\(Int(locMgr.accuracy))m").font(EFont.body(10)).foregroundColor(.eTextMuted) }
+            }
+            .padding(.horizontal, 16).padding(.vertical, 10)
+            .background(Color.eCard.opacity(0.92)).overlay(RoundedRectangle(cornerRadius: 100).stroke(Color.eBorder, lineWidth: 1)).clipShape(RoundedRectangle(cornerRadius: 100))
+            .padding(.horizontal, 20).padding(.bottom, 10)
         }
-        .padding(.horizontal, 20).padding(.vertical, 12)
-        .background(Color.eCard).overlay(alignment: .top) { Rectangle().fill(Color.eBorder).frame(height: 0.5) }
-    }
-    @ViewBuilder private func ptab(_ i: Int, icon: String, label: String, target: PScreen) -> some View {
-        Button {
-            vm.selectedTab = i; vm.screen = target
-            if target == .history { Task { await vm.loadHistory() } }
-        } label: {
-            VStack(spacing: 4) {
-                Image(systemName: vm.selectedTab == i ? icon : icon.replacingOccurrences(of: ".fill", with: ""))
-                    .font(.system(size: 20)).foregroundColor(vm.selectedTab == i ? .eGreen : .eTextMuted)
-                Text(label).font(EFont.body(10, weight: vm.selectedTab == i ? .bold : .regular))
-                    .foregroundColor(vm.selectedTab == i ? .eGreen : .eTextMuted)
-            }.frame(maxWidth: .infinity)
-        }
+        .background(LinearGradient(colors: [Color.eBackground.opacity(0.85), .clear], startPoint: .top, endPoint: .bottom))
     }
 }
 
-// MARK: - Booking (search + ride options)
+struct PHomeBottomSheet: View {
+    @ObservedObject var vm: PassengerViewModel
+    @StateObject private var locMgr = LocationManager.shared
+    var timeOfDay: String { let h = Calendar.current.component(.hour, from: Date()); return h < 12 ? "morning" : h < 17 ? "afternoon" : "evening" }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ESheetHandle().padding(.top, 12).padding(.bottom, 18)
+            Text("Good \(timeOfDay), \(vm.user.firstName) 👋").font(EFont.body(13)).foregroundColor(.eTextSoft).padding(.bottom, 4)
+            Text("Where to?").font(EFont.display(22, weight: .bold)).foregroundColor(.eText).kerning(-0.5).padding(.bottom, 14)
+            Button {
+                setPickup(); vm.dropoffAddress = ""; vm.dropoffCoord = nil; vm.estimates = [:]; vm.screen = .booking
+            } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "magnifyingglass").font(.system(size: 14, weight: .semibold)).foregroundColor(.eGreen)
+                    Text("Search destination…").font(EFont.body(15)).foregroundColor(.eTextMuted); Spacer()
+                }
+                .padding(.horizontal, 16).padding(.vertical, 15).background(Color.eSurface)
+                .overlay(RoundedRectangle(cornerRadius: 13).stroke(Color.eBorder, lineWidth: 1.5)).clipShape(RoundedRectangle(cornerRadius: 13))
+            }.padding(.bottom, 12)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(PopularPlace.all.prefix(4)) { p in
+                        PQuickChip(emoji: p.emoji, label: p.name).onTapGesture { setPickup(); vm.setPopular(p); vm.screen = .booking }
+                    }
+                }
+            }.padding(.bottom, 18)
+            if !vm.tripHistory.isEmpty {
+                Text("RECENT PLACES").font(EFont.body(11, weight: .bold)).foregroundColor(.eTextMuted).kerning(0.8).padding(.bottom, 10)
+                VStack(spacing: 0) {
+                    ForEach(Array(vm.tripHistory.prefix(2).enumerated()), id: \.element.id) { idx, trip in
+                        HStack(spacing: 12) {
+                            ZStack { RoundedRectangle(cornerRadius: 10).fill(Color.eSurface).frame(width: 38, height: 38); Text("📍").font(.system(size: 16)) }
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(trip.dropoffAddress).font(EFont.body(14)).foregroundColor(.eText).lineLimit(1)
+                                Text(trip.pickupAddress).font(EFont.body(12)).foregroundColor(.eTextMuted).lineLimit(1)
+                            }; Spacer()
+                        }.padding(.vertical, 11)
+                        .onTapGesture { setPickup(); vm.dropoffAddress = trip.dropoffAddress; vm.estimates = [:]
+                            geocode(trip.dropoffAddress) { c in vm.dropoffCoord = c; Task { await vm.fetchEstimates() }; vm.screen = .booking }
+                        }
+                        if idx == 0 { Divider().background(Color.eBorder) }
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 20).padding(.bottom, 88)
+        .background(Color.eCard).clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay(alignment: .top) { RoundedRectangle(cornerRadius: 28, style: .continuous).stroke(Color.eBorder, lineWidth: 1) }
+    }
+    private func setPickup() {
+        if let c = locMgr.coordinate { vm.pickupCoord = c; vm.pickupAddress = locMgr.address.isEmpty ? "Current Location" : locMgr.address }
+    }
+}
+
+struct PQuickChip: View {
+    let emoji: String; let label: String
+    var body: some View {
+        HStack(spacing: 6) { Text(emoji).font(.system(size: 15)); Text(label).font(EFont.body(13)).foregroundColor(.eText) }
+            .padding(.horizontal, 14).padding(.vertical, 8).background(Color.eSurface)
+            .overlay(RoundedRectangle(cornerRadius: 100).stroke(Color.eBorder, lineWidth: 1)).clipShape(RoundedRectangle(cornerRadius: 100))
+    }
+}
+
+// MARK: - Booking View
 struct PBookingView: View {
     @ObservedObject var vm: PassengerViewModel
-    @State private var showSearch = true
+    @State private var isSearching = true
     var body: some View {
         ZStack(alignment: .bottom) {
-            PBookingMap(pickup: vm.pickupCoord, dropoff: vm.dropoffCoord).ignoresSafeArea()
-            VStack { HStack { Button { vm.screen = .home } label: { ZStack { RoundedRectangle(cornerRadius: 10).fill(Color.eCard.opacity(0.92)).overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.eBorder, lineWidth: 1)); Image(systemName: "arrow.left").font(.system(size: 15, weight: .semibold)).foregroundColor(.eText) }.frame(width: 38, height: 38) }; Spacer() }.padding(.horizontal, 16).padding(.top, 54); Spacer() }
-            if showSearch { PSearchSheet(vm: vm, showSearch: $showSearch).transition(.move(edge: .bottom)) }
-            else          { PRideSheet(vm: vm, onEdit: { withAnimation { showSearch = true } }).transition(.move(edge: .bottom)) }
+            PBookingMapView(pickup: vm.pickupCoord, dropoff: vm.dropoffCoord).ignoresSafeArea()
+            VStack { HStack {
+                Button { vm.screen = .home } label: {
+                    ZStack { RoundedRectangle(cornerRadius: 10).fill(Color.eCard.opacity(0.92)).overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.eBorder, lineWidth: 1)); Image(systemName: "arrow.left").font(.system(size: 15, weight: .semibold)).foregroundColor(.eText) }.frame(width: 38, height: 38)
+                }; Spacer()
+            }.padding(.horizontal, 16).padding(.top, 54); Spacer() }
+            if isSearching { PSearchSheet(vm: vm, isSearching: $isSearching) }
+            else           { PLiveBookingSheet(vm: vm, onEdit: { isSearching = true }) }
         }
         .ignoresSafeArea()
-        .onAppear { showSearch = vm.dropoffAddress.isEmpty }
-        .onChange(of: vm.dropoffAddress) { if !$0.isEmpty { withAnimation { showSearch = false } } }
+        .onAppear { isSearching = vm.dropoffAddress.isEmpty }
+        .onChange(of: vm.dropoffAddress) { if !$0.isEmpty { withAnimation { isSearching = false } } }
     }
 }
 
-struct PBookingMap: UIViewRepresentable {
+struct PBookingMapView: UIViewRepresentable {
     var pickup: CLLocationCoordinate2D?; var dropoff: CLLocationCoordinate2D?
     func makeUIView(context: Context) -> MKMapView {
-        let m = MKMapView(); m.delegate = context.coordinator; m.showsUserLocation = true
-        m.userTrackingMode = .follow; m.showsCompass = false; m.showsTraffic = true; return m
+        let m = MKMapView(); m.delegate = context.coordinator; m.showsUserLocation = true; m.userTrackingMode = .follow; m.showsCompass = false; return m
     }
     func updateUIView(_ map: MKMapView, context: Context) {
         let co = context.coordinator
-        guard pickup != co.lp || dropoff != co.ld else { return }
+        guard pickup?.latitude != co.lp?.latitude || dropoff?.latitude != co.ld?.latitude else { return }
         co.lp = pickup; co.ld = dropoff
         map.removeOverlays(map.overlays); map.removeAnnotations(map.annotations.filter { !($0 is MKUserLocation) })
-        guard let p = pickup, let d = dropoff else { return }
-        let pa = MKPointAnnotation(); pa.coordinate = p; pa.title = "Pickup"
-        let da = MKPointAnnotation(); da.coordinate = d; da.title = "Drop-off"
-        map.addAnnotations([pa, da])
-        let req = MKDirections.Request(); req.transportType = .automobile
-        req.source = MKMapItem(placemark: MKPlacemark(coordinate: p))
-        req.destination = MKMapItem(placemark: MKPlacemark(coordinate: d))
-        MKDirections(request: req).calculate { resp, _ in
-            guard let route = resp?.routes.first else { return }
-            DispatchQueue.main.async {
-                map.addOverlay(route.polyline, level: .aboveRoads)
-                map.setVisibleMapRect(route.polyline.boundingMapRect, edgePadding: UIEdgeInsets(top: 80, left: 40, bottom: 420, right: 40), animated: true)
-            }
-        }
+        if let p = pickup { let a = PColoredPin(coordinate: p, title: "Pickup", isPickup: true); map.addAnnotation(a) }
+        if let d = dropoff { let a = PColoredPin(coordinate: d, title: "Drop-off", isPickup: false); map.addAnnotation(a) }
+        if let p = pickup, let d = dropoff {
+            let req = MKDirections.Request(); req.transportType = .automobile
+            req.source = MKMapItem(placemark: MKPlacemark(coordinate: p)); req.destination = MKMapItem(placemark: MKPlacemark(coordinate: d))
+            MKDirections(request: req).calculate { resp, _ in DispatchQueue.main.async {
+                guard let r = resp?.routes.first else { return }
+                map.addOverlay(r.polyline, level: .aboveRoads)
+                map.setVisibleMapRect(r.polyline.boundingMapRect, edgePadding: UIEdgeInsets(top: 80, left: 40, bottom: 420, right: 40), animated: true)
+            }}
+        } else if let p = pickup { map.setRegion(.init(center: p, span: .init(latitudeDelta: 0.012, longitudeDelta: 0.012)), animated: true) }
     }
     func makeCoordinator() -> Coord { Coord() }
     final class Coord: NSObject, MKMapViewDelegate {
         var lp: CLLocationCoordinate2D?; var ld: CLLocationCoordinate2D?
         func mapView(_ m: MKMapView, rendererFor o: MKOverlay) -> MKOverlayRenderer {
-            let r = MKPolylineRenderer(overlay: o); r.strokeColor = UIColor(red:0,green:0.898,blue:0.455,alpha:1); r.lineWidth = 6; r.lineCap = .round; return r
+            let r = MKPolylineRenderer(overlay: o); r.strokeColor = UIColor(red:0,green:0.9,blue:0.46,alpha:1); r.lineWidth = 5; r.lineCap = .round; return r
         }
-        func mapView(_ m: MKMapView, viewFor ann: MKAnnotation) -> MKAnnotationView? {
-            guard !(ann is MKUserLocation) else { return nil }
-            let v = m.dequeueReusableAnnotationView(withIdentifier: "bpin") ?? MKMarkerAnnotationView(annotation: ann, reuseIdentifier: "bpin")
-            if let mv = v as? MKMarkerAnnotationView {
-                mv.annotation = ann; mv.canShowCallout = true
-                if ann.title == "Pickup" { mv.glyphImage = UIImage(systemName: "figure.wave"); mv.markerTintColor = UIColor(red:0,green:0.898,blue:0.455,alpha:1) }
-                else { mv.glyphImage = UIImage(systemName: "flag.checkered"); mv.markerTintColor = UIColor(red:1,green:0.6,blue:0,alpha:1) }
-            }
-            return v
+        func mapView(_ m: MKMapView, viewFor a: MKAnnotation) -> MKAnnotationView? {
+            guard let pin = a as? PColoredPin else { return nil }
+            let id = pin.isPickup ? "pickup" : "dropoff"
+            let v  = (m.dequeueReusableAnnotationView(withIdentifier: id) as? MKMarkerAnnotationView) ?? MKMarkerAnnotationView(annotation: pin, reuseIdentifier: id)
+            v.annotation = pin; v.canShowCallout = true
+            v.glyphImage = UIImage(systemName: pin.isPickup ? "circle.fill" : "flag.fill")
+            v.markerTintColor = pin.isPickup ? UIColor(red:0,green:0.9,blue:0.46,alpha:1) : UIColor(red:1,green:0.6,blue:0,alpha:1); return v
         }
     }
 }
+final class PColoredPin: NSObject, MKAnnotation {
+    let coordinate: CLLocationCoordinate2D; let title: String?; let isPickup: Bool
+    init(coordinate: CLLocationCoordinate2D, title: String, isPickup: Bool) { self.coordinate=coordinate; self.title=title; self.isPickup=isPickup }
+}
 
+// MARK: - Search Destination Sheet (ZipRide SearchDestinationSheet)
 struct PSearchSheet: View {
     @ObservedObject var vm: PassengerViewModel
-    @Binding var showSearch: Bool
+    @Binding var isSearching: Bool
     @StateObject private var locMgr = LocationManager.shared
-
-    @State private var activeField:  String = "dropoff"
-    @State private var pickupText    = ""
-    @State private var dropoffText   = ""
-    @State private var results:      [MKMapItem] = []
-    @State private var search:       MKLocalSearch?
-    @FocusState private var pickupFocused:  Bool
-    @FocusState private var dropoffFocused: Bool
+    @State private var activeField = "dropoff"; @State private var pickupText = ""; @State private var dropoffText = ""
+    @State private var results: [MKMapItem] = []; @State private var search: MKLocalSearch?
+    @FocusState private var pFocus: Bool; @FocusState private var dFocus: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ESheetHandle().padding(.top, 12).padding(.bottom, 14)
+            Text("Plan your trip").font(EFont.display(20, weight: .heavy)).foregroundColor(.eText).padding(.horizontal, 20).padding(.bottom, 16)
 
-            Text("Plan your trip")
-                .font(EFont.display(20, weight: .heavy))
-                .foregroundColor(.eText)
-                .padding(.horizontal, 20).padding(.bottom, 16)
-
-            // Route card
             VStack(spacing: 0) {
-
-                // ── Pickup row ──────────────────────────────────────
+                // Pickup
                 HStack(spacing: 12) {
-                    Circle().fill(Color.eGreen).frame(width: 10, height: 10)
+                    ZStack { Circle().fill(Color.eGreen).frame(width: 12, height: 12); if activeField == "pickup" { Circle().stroke(Color.eGreen, lineWidth: 2).frame(width: 20, height: 20) } }.frame(width: 20)
+                    TextField(locMgr.address.isEmpty ? "Current location" : locMgr.address, text: $pickupText)
+                        .font(EFont.body(14, weight: activeField == "pickup" ? .semibold : .regular))
+                        .foregroundColor(activeField == "pickup" ? .eText : .eTextSoft).tint(.eGreen).focused($pFocus)
+                        .onChange(of: pFocus) { if $0 { activeField="pickup"; dFocus=false; if pickupText.isEmpty { pickupText=vm.pickupAddress } } }
+                        .onChange(of: pickupText) { if activeField=="pickup" { runSearch($0) } }
+                    if activeField=="pickup" && !pickupText.isEmpty { Button { pickupText=""; results=[] } label: { Image(systemName: "xmark.circle.fill").foregroundColor(.eTextMuted).font(.system(size: 16)) } }
+                }.padding(.horizontal, 16).padding(.vertical, 13)
 
-                    TextField("Pickup location", text: $pickupText)
-                        .font(EFont.body(14))
-                        .foregroundColor(.eText)
-                        .tint(.eGreen)
-                        .focused($pickupFocused)
-                        .onChange(of: pickupFocused) { focused in
-                            if focused {
-                                activeField    = "pickup"
-                                dropoffFocused = false
-                                if pickupText.isEmpty { pickupText = vm.pickupAddress }
-                            }
-                        }
-                        .onChange(of: pickupText) { text in
-                            if activeField == "pickup" { runSearch(text) }
-                        }
-
-                    if activeField == "pickup" {
-                        if !pickupText.isEmpty {
-                            Button { pickupText = ""; results = [] } label: {
-                                Image(systemName: "xmark.circle.fill")
-                                    .foregroundColor(.eTextMuted)
-                            }
-                        }
-                        Button {
-                            if let c = locMgr.coordinate {
-                                vm.pickupCoord   = c
-                                vm.pickupAddress = locMgr.address
-                                pickupText       = locMgr.address
-                                results          = []
-                                dropoffFocused   = true
-                            }
-                        } label: {
-                            Image(systemName: "location.fill")
-                                .font(.system(size: 14))
-                                .foregroundColor(.eGreen)
-                        }
-                    }
-                }
-                .padding(.horizontal, 16).padding(.vertical, 14)
-                .background(activeField == "pickup" ? Color.eGreen.opacity(0.06) : Color.clear)
-
-                Divider().background(Color.eBorder).padding(.leading, 38)
-
-                // ── Swap button ─────────────────────────────────────
+                // Swap
                 HStack {
-                    Rectangle().fill(Color.eBorder).frame(width: 1, height: 14).padding(.leading, 16)
-                    Spacer()
+                    Rectangle().fill(Color.eBorder).frame(width: 1, height: 20).padding(.leading, 25); Spacer()
                     Button {
-                        let tmpA = vm.pickupAddress;  let tmpC = vm.pickupCoord
-                        vm.pickupAddress  = vm.dropoffAddress; vm.pickupCoord  = vm.dropoffCoord
-                        vm.dropoffAddress = tmpA;              vm.dropoffCoord = tmpC
-                        pickupText  = vm.pickupAddress
-                        dropoffText = vm.dropoffAddress
-                        results = []
-                    } label: {
-                        ZStack {
-                            Circle().fill(Color.eSurface)
-                                .frame(width: 28, height: 28)
-                                .overlay(Circle().stroke(Color.eBorder, lineWidth: 1))
-                            Image(systemName: "arrow.up.arrow.down")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundColor(.eTextMuted)
-                        }
-                    }.padding(.trailing, 16)
+                        let ta=vm.pickupAddress; let tc=vm.pickupCoord
+                        vm.pickupAddress=vm.dropoffAddress; vm.pickupCoord=vm.dropoffCoord
+                        vm.dropoffAddress=ta; vm.dropoffCoord=tc; pickupText=vm.pickupAddress; dropoffText=vm.dropoffAddress
+                    } label: { ZStack { Circle().fill(Color.eSurface).frame(width: 28, height: 28).overlay(Circle().stroke(Color.eBorder, lineWidth: 1)); Image(systemName: "arrow.up.arrow.down").font(.system(size: 11, weight: .bold)).foregroundColor(.eTextMuted) } }
+                    .padding(.trailing, 16)
                 }
+                Rectangle().fill(Color.eBorder).frame(height: 0.5).padding(.leading, 48)
 
-                Divider().background(Color.eBorder).padding(.leading, 38)
-
-                // ── Dropoff row ──────────────────────────────────────
+                // Dropoff
                 HStack(spacing: 12) {
-                    RoundedRectangle(cornerRadius: 3).fill(Color.eAccent).frame(width: 10, height: 10)
-
+                    ZStack { RoundedRectangle(cornerRadius: 3).fill(Color.eAccent).frame(width: 12, height: 12); if activeField=="dropoff" { RoundedRectangle(cornerRadius: 4).stroke(Color.eAccent, lineWidth: 2).frame(width: 20, height: 20) } }.frame(width: 20)
                     TextField("Search destination…", text: $dropoffText)
-                        .font(EFont.body(14))
-                        .foregroundColor(.eText)
-                        .tint(.eGreen)
-                        .focused($dropoffFocused)
-                        .onChange(of: dropoffFocused) { if $0 { activeField = "dropoff"; pickupFocused = false } }
-                        .onChange(of: dropoffText) { text in
-                            if activeField == "dropoff" { runSearch(text) }
-                        }
-
-                    if !dropoffText.isEmpty {
-                        Button { dropoffText = ""; results = [] } label: {
-                            Image(systemName: "xmark.circle.fill").foregroundColor(.eTextMuted)
-                        }
-                    }
-                }
-                .padding(.horizontal, 16).padding(.vertical, 14)
-                .background(activeField == "dropoff" ? Color.eGreen.opacity(0.06) : Color.clear)
+                        .font(EFont.body(14, weight: activeField=="dropoff" ? .semibold : .regular))
+                        .foregroundColor(activeField=="dropoff" ? .eText : .eTextSoft).tint(.eGreen).focused($dFocus)
+                        .onChange(of: dFocus) { if $0 { activeField="dropoff"; pFocus=false } }
+                        .onChange(of: dropoffText) { if activeField=="dropoff" { runSearch($0) } }
+                    if activeField=="dropoff" && !dropoffText.isEmpty { Button { dropoffText=""; results=[] } label: { Image(systemName: "xmark.circle.fill").foregroundColor(.eTextMuted).font(.system(size: 16)) } }
+                }.padding(.horizontal, 16).padding(.vertical, 13)
             }
             .background(Color.eSurface)
-            .clipShape(RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.eBorder, lineWidth: 1))
-            .padding(.horizontal, 20).padding(.bottom, 20)
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(activeField=="pickup" ? Color.eGreen.opacity(0.5) : Color.eAccent.opacity(0.5), lineWidth: 1.5))
+            .clipShape(RoundedRectangle(cornerRadius: 16)).padding(.horizontal, 20).padding(.bottom, 12)
 
-            // ── Results / Popular ──────────────────────────────────
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 0) {
+                VStack(spacing: 0) {
                     if !results.isEmpty {
-                        ForEach(Array(results.enumerated()), id: \.offset) { _, item in
-                            Button { selectResult(item) } label: {
+                        ForEach(results, id: \.self) { item in
+                            Button { selectItem(item) } label: {
                                 HStack(spacing: 14) {
-                                    ZStack {
-                                        RoundedRectangle(cornerRadius: 10).fill(Color.eSurface).frame(width: 44, height: 44)
-                                        Image(systemName: "mappin").font(.system(size: 18)).foregroundColor(.eTextMuted)
-                                    }
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(item.name ?? "").font(EFont.body(15, weight: .semibold)).foregroundColor(.eText)
-                                        Text(item.placemark.locality ?? "").font(EFont.body(12)).foregroundColor(.eTextMuted).lineLimit(1)
-                                    }
-                                    Spacer()
+                                    ZStack { RoundedRectangle(cornerRadius: 8).fill(Color.eSurface).frame(width: 36, height: 36); Image(systemName: activeField=="pickup" ? "location.fill" : "mappin.circle.fill").font(.system(size: 15)).foregroundColor(activeField=="pickup" ? .eGreen : .eAccent) }
+                                    VStack(alignment: .leading, spacing: 2) { Text(item.name ?? "").font(EFont.body(14, weight: .semibold)).foregroundColor(.eText).lineLimit(1); Text(item.placemark.title ?? "").font(EFont.body(12)).foregroundColor(.eTextMuted).lineLimit(1) }; Spacer()
                                 }.padding(.horizontal, 20).padding(.vertical, 12)
                             }
-                            Divider().background(Color.eBorder).padding(.leading, 76)
+                            Divider().padding(.leading, 70)
                         }
-                    } else {
-                        Text("POPULAR DESTINATIONS")
-                            .font(EFont.body(11, weight: .bold)).foregroundColor(.eTextMuted).kerning(0.8)
-                            .padding(.horizontal, 20).padding(.bottom, 12)
-                        ForEach(PopularPlace.all) { p in
-                            Button { selectPopular(p) } label: {
-                                HStack(spacing: 14) {
-                                    ZStack {
-                                        RoundedRectangle(cornerRadius: 10).fill(Color.eSurface).frame(width: 44, height: 44)
-                                        Text(p.emoji).font(.system(size: 20))
-                                    }
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(p.name).font(EFont.body(15, weight: .semibold)).foregroundColor(.eText)
-                                        Text(p.address).font(EFont.body(12)).foregroundColor(.eTextMuted).lineLimit(1)
-                                    }
-                                    Spacer()
-                                }.padding(.horizontal, 20).padding(.vertical, 12)
-                            }
-                            Divider().background(Color.eBorder).padding(.leading, 76)
-                        }
-                    }
+                    } else { quickPicks }
                 }
             }
-            .frame(maxHeight: 340)
+            Spacer(minLength: 20)
         }
-        .background(Color.eCard)
-        .clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-        .overlay(alignment: .top) {
-            RoundedRectangle(cornerRadius: 28, style: .continuous).stroke(Color.eBorder, lineWidth: 1)
-        }
-        .onAppear {
-            // Start with dropoff focused, show pickup address in its field
-            pickupText  = vm.pickupAddress
-            dropoffText = ""
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { dropoffFocused = true }
+        .background(Color.eCard).clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+        .overlay(alignment: .top) { RoundedRectangle(cornerRadius: 28, style: .continuous).stroke(Color.eBorder, lineWidth: 1) }
+        .frame(maxHeight: UIScreen.main.bounds.height * 0.78)
+        .onAppear { pickupText = vm.pickupAddress; dropoffText = vm.dropoffAddress; DispatchQueue.main.asyncAfter(deadline: .now()+0.35) { dFocus = true } }
+    }
+
+    @ViewBuilder private var quickPicks: some View {
+        Text(activeField == "pickup" ? "NEARBY PLACES" : "POPULAR DESTINATIONS")
+            .font(EFont.body(10, weight: .bold)).foregroundColor(.eTextMuted).kerning(0.8)
+            .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 20).padding(.bottom, 8)
+        let places: [(String, String, String)] = activeField == "pickup"
+            ? [("📍","Current Location","Use GPS"),("🏠","Home","12 Elm Rd, Fourways"),("💼","Work","14 Fredman Dr, Sandton")]
+            : PopularPlace.all.map { ($0.emoji, $0.name, $0.address) }
+        ForEach(places, id: \.1) { emoji, label, addr in
+            Button { selectPlace(emoji: emoji, label: label, address: addr) } label: {
+                HStack(spacing: 14) {
+                    ZStack { RoundedRectangle(cornerRadius: 8).fill(Color.eSurface).frame(width: 36, height: 36); Text(emoji).font(.system(size: 16)) }
+                    VStack(alignment: .leading, spacing: 2) { Text(label).font(EFont.body(14)).foregroundColor(.eText); Text(addr).font(EFont.body(12)).foregroundColor(.eTextMuted).lineLimit(1) }; Spacer()
+                }.padding(.horizontal, 20).padding(.vertical, 11)
+            }
+            Divider().padding(.leading, 70)
         }
     }
 
-    private func selectResult(_ item: MKMapItem) {
-        let addr  = [item.name, item.placemark.locality].compactMap { $0 }.joined(separator: ", ")
-        let coord = item.placemark.coordinate
-        if activeField == "pickup" {
-            vm.pickupAddress = addr
-            vm.pickupCoord   = coord
-            pickupText       = addr
-            results          = []
-            dropoffFocused   = true
+    private func selectItem(_ item: MKMapItem) {
+        let coord = item.placemark.coordinate; let name = item.name ?? item.placemark.title ?? "Location"
+        if activeField == "pickup" { vm.pickupAddress=name; vm.pickupCoord=coord; pickupText=name; results=[]; activeField="dropoff"; pFocus=false; dFocus=true }
+        else { vm.setDestination(name, coord: coord); results=[]; ensurePickup(); if !vm.pickupAddress.isEmpty { isSearching=false; Task { await vm.fetchEstimates() } } }
+    }
+    private func selectPlace(emoji: String, label: String, address: String) {
+        if activeField=="pickup" && label=="Current Location" {
+            if let c = locMgr.coordinate { vm.pickupCoord=c; vm.pickupAddress=locMgr.address; pickupText=locMgr.address }
+            if !vm.dropoffAddress.isEmpty { isSearching=false } else { activeField="dropoff"; dFocus=true }
         } else {
-            vm.setDestination(addr, coord: coord)
-            withAnimation { showSearch = false }
-        }
-    }
-
-    private func selectPopular(_ p: PopularPlace) {
-        if activeField == "pickup" {
-            vm.pickupAddress = p.address
-            vm.pickupCoord   = .init(latitude: p.lat, longitude: p.lon)
-            pickupText       = p.address
-            results          = []
-            dropoffFocused   = true
-        } else {
-            vm.setPopular(p)
-            withAnimation { showSearch = false }
-        }
-    }
-
-    private func runSearch(_ text: String) {
-        guard !text.isEmpty else { results = []; return }
-        search?.cancel()
-        let req = MKLocalSearch.Request()
-        req.naturalLanguageQuery = text
-        req.resultTypes          = [.address, .pointOfInterest]
-        req.region = MKCoordinateRegion(
-            center: locMgr.coordinate ?? .init(latitude: -26.1076, longitude: 28.0567),
-            span:   .init(latitudeDelta: 0.5, longitudeDelta: 0.5))
-        search = MKLocalSearch(request: req)
-        search?.start { resp, _ in
-            DispatchQueue.main.async {
-                self.results = resp?.mapItems.prefix(6).map { $0 } ?? []
+            geocode(address) { c in guard let c else { return }
+                if activeField=="pickup" { vm.pickupAddress=label; vm.pickupCoord=c; pickupText=label; results=[]; activeField="dropoff"; pFocus=false; dFocus=true }
+                else { vm.setDestination(label, coord: c); results=[]; ensurePickup(); isSearching=false; Task { await vm.fetchEstimates() } }
             }
         }
+    }
+    private func ensurePickup() { if vm.pickupCoord==nil, let c=locMgr.coordinate { vm.pickupCoord=c; vm.pickupAddress=locMgr.address } }
+    private func runSearch(_ q: String) {
+        search?.cancel(); search=nil; guard q.count>1 else { results=[]; return }
+        let req=MKLocalSearch.Request(); req.naturalLanguageQuery=q+" South Africa"
+        req.region=MKCoordinateRegion(center: locMgr.coordinate ?? .init(latitude:-26.1076,longitude:28.0567), span: .init(latitudeDelta:1.5,longitudeDelta:1.5))
+        let s=MKLocalSearch(request: req); search=s
+        s.start { resp,_ in DispatchQueue.main.async { self.results=resp?.mapItems.prefix(8).map{$0} ?? [] } }
     }
 }
 
-
-struct PRideSheet: View {
+// MARK: - Live Booking Sheet (ZipRide LiveBookingSheet)
+struct PLiveBookingSheet: View {
     @ObservedObject var vm: PassengerViewModel; var onEdit: () -> Void
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             ESheetHandle().padding(.top, 12).padding(.bottom, 16)
+            // Route summary
             VStack(spacing: 0) {
-                HStack(spacing: 12) { Circle().fill(Color.eGreen).frame(width: 10, height: 10); Text(vm.pickupAddress).font(EFont.body(14)).foregroundColor(.eText).lineLimit(1); Spacer() }.padding(.vertical, 10)
-                Rectangle().fill(Color.eBorder).frame(width: 1, height: 14).padding(.leading, 6)
-                Button(action: onEdit) { HStack(spacing: 12) { Circle().fill(Color.eAccent).frame(width: 10, height: 10); Text(vm.dropoffAddress.isEmpty ? "Tap to set destination…" : vm.dropoffAddress).font(EFont.body(14)).foregroundColor(.eText).lineLimit(1); Spacer() }.padding(.vertical, 10) }
-            }.padding(14).background(Color.eSurface).clipShape(RoundedRectangle(cornerRadius: 14))
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.eBorder, lineWidth: 1)).padding(.horizontal, 20).padding(.bottom, 16)
-            Text("CHOOSE RIDE").font(EFont.body(11, weight: .bold)).foregroundColor(.eTextMuted).kerning(0.8).padding(.horizontal, 20).padding(.bottom, 10)
+                PTripSummaryRow(dotColor: .eGreen, text: vm.pickupAddress.isEmpty ? "Current Location" : vm.pickupAddress)
+                Rectangle().fill(Color.eBorder).frame(width: 1, height: 14).padding(.leading, 4)
+                Button(action: onEdit) { PTripSummaryRow(dotColor: .eAccent, text: vm.dropoffAddress.isEmpty ? "Tap to set destination…" : vm.dropoffAddress) }
+            }.padding(14).background(Color.eSurface).overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.eBorder, lineWidth: 1)).clipShape(RoundedRectangle(cornerRadius: 16)).padding(.bottom, 18)
+
+            Text("CHOOSE SERVICE").font(EFont.body(11, weight: .bold)).foregroundColor(.eTextMuted).kerning(0.8).padding(.bottom, 8)
+
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 10) {
-                    ForEach(vm.standardServices) { svc in
-                        let est = vm.estimates[svc.key]; let fare = est?.estimated ?? est?.min; let dur = est?.durationMin; let sel = vm.selectedService?.id == svc.id
-                        Button { vm.selectedService = svc } label: {
-                            HStack(spacing: 14) {
-                                Text(svc.emoji).font(.system(size: 32)).frame(width: 48)
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(svc.name).font(EFont.body(16, weight: .bold)).foregroundColor(.eText)
-                                    Text("\(svc.maxPassengers) seats · \(svc.vehicleType.capitalized)").font(EFont.body(12)).foregroundColor(.eTextMuted)
-                                }
-                                Spacer()
-                                VStack(alignment: .trailing, spacing: 3) {
-                                    HStack(spacing: 4) {
-                                        if sel { Image(systemName: "checkmark.circle.fill").font(.system(size: 14)).foregroundColor(.eGreen) }
-                                        Text(fare.map { "R\(Int($0))" } ?? svc.displayPrice).font(EFont.display(18, weight: .heavy)).foregroundColor(.eText)
-                                    }
-                                    if let d = dur { Text("~\(Int(d)) min").font(EFont.body(11)).foregroundColor(.eTextMuted) }
-                                }
-                            }.padding(14)
-                            .background(sel ? Color.eGreen.opacity(0.08) : Color.eSurface2)
-                            .clipShape(RoundedRectangle(cornerRadius: 14))
-                            .overlay(RoundedRectangle(cornerRadius: 14).stroke(sel ? Color.eGreen : Color.eBorder, lineWidth: sel ? 2 : 1))
-                        }
-                    }
-                }.padding(.horizontal, 20).padding(.bottom, 12)
+                    if vm.standardServices.isEmpty { ForEach(0..<3,id:\.self){_ in RoundedRectangle(cornerRadius:16).fill(Color.eSurface).frame(height:72).overlay(ProgressView().tint(.eGreen))} }
+                    else { ForEach(vm.standardServices) { svc in PLiveServiceCard(vm: vm, service: svc) } }
+                }.padding(.bottom, 16)
             }.frame(maxHeight: 260)
-            if let err = vm.errorMessage { EErrorBanner(message: err).padding(.horizontal, 20).padding(.bottom, 8) }
-            EPrimaryButton(title: vm.confirmTitle, isLoading: vm.isLoading) { vm.confirmRide() }.padding(.horizontal, 20).padding(.bottom, 36)
+
+            PPPaymentBar().padding(.bottom, 14)
+            if let err = vm.errorMessage { Text(err).font(EFont.body(13)).foregroundColor(.eRed).padding(.bottom, 8) }
+            if let svc = vm.selectedService {
+                HStack(spacing: 6) { Image(systemName: svc.isCustomHire ? "clock.fill" : "bolt.fill").font(.system(size: 11)); Text(svc.isCustomHire ? "Custom Hire" : "Standard Ride").font(EFont.body(11, weight: .bold)); Spacer() }
+                    .foregroundColor(svc.isCustomHire ? Color(hex:"#6366F1") : .eGreen)
+                    .padding(.horizontal,12).padding(.vertical,8).background((svc.isCustomHire ? Color(hex:"#6366F1") : Color.eGreen).opacity(0.08))
+                    .overlay(Capsule().stroke((svc.isCustomHire ? Color(hex:"#6366F1") : Color.eGreen).opacity(0.2),lineWidth:1)).clipShape(Capsule()).padding(.bottom,8)
+            }
+            Button { vm.confirmRide() } label: {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16).fill(vm.isLoading ? Color.eGreen.opacity(0.5) : Color.eGreen)
+                    if vm.isLoading { ProgressView().tint(.black) }
+                    else { Text("Confirm  ·  \(vm.selectedFare.map { "R\(Int($0))" } ?? "R—")").font(EFont.body(16, weight: .bold)).foregroundColor(.black) }
+                }.frame(maxWidth: .infinity).frame(height: 56)
+            }.disabled(vm.isLoading || vm.dropoffAddress.isEmpty)
+            Spacer(minLength: 0)
         }
+        .padding(.horizontal, 20).padding(.bottom, 36)
         .background(Color.eCard).clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
         .overlay(alignment: .top) { RoundedRectangle(cornerRadius: 28, style: .continuous).stroke(Color.eBorder, lineWidth: 1) }
+        .frame(maxHeight: UIScreen.main.bounds.height * 0.70)
+        .task { await vm.loadServices(); if vm.estimates.isEmpty { await vm.fetchEstimates() } }
     }
 }
 
-// MARK: - Finding Driver
-struct PFindingDriverView: View {
+struct PTripSummaryRow: View {
+    let dotColor: Color; let text: String
+    var body: some View { HStack(spacing: 12) { Circle().fill(dotColor).frame(width: 10, height: 10); Text(text).font(EFont.body(13)).foregroundColor(.eText) }.padding(.vertical, 5) }
+}
+
+struct PLiveServiceCard: View {
+    @ObservedObject var vm: PassengerViewModel; let service: BERideService
+    var isSelected: Bool { vm.selectedService?.id == service.id }
+    var est: EstimateResponse? { vm.estimates[service.key] }
+    var livePrice: String { est.flatMap { $0.estimated ?? $0.min }.map { "R\(Int($0))" } ?? service.displayPrice }
+    var liveETA:   String { est?.durationMin.map { "\(Int($0)) min" } ?? "— min" }
+    var body: some View {
+        Button { withAnimation(.spring(response: 0.3)) { vm.selectedService = service }; Task { await vm.fetchEstimates() } } label: {
+            HStack(spacing: 14) {
+                Text(service.emoji).font(.system(size: 30)).frame(width: 68, height: 46)
+                VStack(alignment: .leading, spacing: 3) { Text(service.name).font(EFont.display(15, weight: .bold)).foregroundColor(.eText); Text("\(service.maxPassengers) seats · \(service.vehicleType.capitalized)").font(EFont.body(12)).foregroundColor(.eTextSoft) }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 3) {
+                    if est == nil && isSelected { ProgressView().tint(.eGreen).scaleEffect(0.7) }
+                    else { Text(livePrice).font(EFont.display(18, weight: .heavy)).foregroundColor(.eText); Text(liveETA).font(EFont.body(11)).foregroundColor(.eTextSoft) }
+                }
+            }.padding(14)
+            .background(isSelected ? Color.eGreen.opacity(0.05) : Color.eSurface)
+            .overlay(RoundedRectangle(cornerRadius: 16).stroke(isSelected ? Color.eGreen : Color.eBorder, lineWidth: 1.5))
+            .clipShape(RoundedRectangle(cornerRadius: 16))
+            .overlay(alignment: .topTrailing) { if isSelected { ZStack { Circle().fill(Color.eGreen).frame(width: 20, height: 20); Image(systemName: "checkmark").font(.system(size: 10, weight: .black)).foregroundColor(.black) }.offset(x: -10, y: 10) } }
+        }
+    }
+}
+
+struct PPPaymentBar: View {
+    @State private var showPicker = false; @State private var method = "cash"
+    var body: some View {
+        Button { showPicker = true } label: {
+            HStack(spacing: 10) {
+                ZStack { RoundedRectangle(cornerRadius: 8).fill(Color.eBackground).frame(width: 32, height: 32); Image(systemName: method=="cash" ? "banknote.fill" : "creditcard.fill").font(.system(size: 14)).foregroundColor(method=="cash" ? .eAccent : .eGreen) }
+                VStack(alignment: .leading, spacing: 2) { Text(method=="cash" ? "Cash Payment" : "Card Payment").font(EFont.body(13, weight: .semibold)).foregroundColor(.eText); Text(method=="cash" ? "Pay driver directly" : "Pay by card on completion").font(EFont.body(11)).foregroundColor(.eTextSoft) }
+                Spacer(); Image(systemName: "chevron.up.chevron.down").font(.system(size: 11, weight: .semibold)).foregroundColor(.eTextMuted)
+            }.padding(.horizontal,16).padding(.vertical,12).background(Color.eSurface).overlay(RoundedRectangle(cornerRadius:13).stroke(Color.eBorder,lineWidth:1)).clipShape(RoundedRectangle(cornerRadius:13))
+        }
+        .confirmationDialog("Payment Method", isPresented: $showPicker, titleVisibility: .visible) {
+            Button("💳  Card Payment") { method="card" }; Button("💵  Cash Payment") { method="cash" }; Button("Cancel", role: .cancel) {}
+        } message: { Text("How would you like to pay?") }
+    }
+}
+
+// MARK: - Driver Matched View (ZipRide DriverMatchedView + LiveDriverMatchedSheet)
+struct PDriverMatchedView: View {
     @ObservedObject var vm: PassengerViewModel
-    @State private var spin: Double = 0
-    var status: String { vm.currentTrip?.status ?? "searching" }
-    var isSearching: Bool { status == "searching" }
+    @StateObject private var locMgr = LocationManager.shared
+    var pickupCoord: CLLocationCoordinate2D? {
+        guard let t = vm.currentTrip else { return locMgr.coordinate }
+        return CLLocationCoordinate2D(latitude: t.pickupLat, longitude: t.pickupLon)
+    }
     var body: some View {
         ZStack(alignment: .bottom) {
-            ETaxiMap(origin: vm.driverCoord ?? vm.pickupCoord, target: vm.pickupCoord,
-                     isPickup: true, fitRoute: true,
-                     eta: $vm.mapEta, distance: $vm.mapDist, traffic: $vm.mapTraffic).ignoresSafeArea()
-            VStack(spacing: 0) {
-                ESheetHandle().padding(.top, 12).padding(.bottom, 16)
-                VStack(spacing: 14) {
-                    if vm.searchTimedOut {
-                        PNoDriverSheet(vm: vm)
-                    } else {
-                        HStack(spacing: 10) {
-                            if isSearching {
-                                Image(systemName: "arrow.triangle.2.circlepath").font(.system(size: 15, weight: .bold)).foregroundColor(.eGreen)
-                                    .rotationEffect(.degrees(spin)).animation(.linear(duration: 1.5).repeatForever(autoreverses: false), value: spin)
-                            } else { Image(systemName: "checkmark.circle.fill").font(.system(size: 15)).foregroundColor(.eGreen) }
-                            Text(vm.currentTrip?.statusLabel ?? "Finding driver…").font(EFont.body(15, weight: .bold)).foregroundColor(.eText); Spacer()
-                            if isSearching { Text("\(vm.searchSeconds)s").font(EFont.mono(14)).foregroundColor(.eTextSoft) }
-                        }.padding(.horizontal, 16).padding(.vertical, 14).background(Color.eGreen.opacity(0.12)).clipShape(RoundedRectangle(cornerRadius: 14))
-
-                        if isSearching {
-                            GeometryReader { geo in ZStack(alignment: .leading) { Capsule().fill(Color.eSurface2).frame(height: 3); Capsule().fill(Color.eGreen).frame(width: CGFloat(60 - vm.searchSeconds) / 60.0 * geo.size.width, height: 3).animation(.linear(duration: 1), value: vm.searchSeconds) } }.frame(height: 3)
-                        }
-
-                        if let t = vm.currentTrip, !isSearching, let name = t.driverName {
-                            HStack(spacing: 14) {
-                                ZStack { Circle().fill(Color.eGreen.opacity(0.15)).frame(width: 48, height: 48); Text(String(name.prefix(1))).font(EFont.display(20, weight: .bold)).foregroundColor(.eGreen) }
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(name).font(EFont.body(15, weight: .bold)).foregroundColor(.eText)
-                                    if let v = t.vehicleInfo { Text(v).font(EFont.body(12)).foregroundColor(.eTextSoft) }
-                                    if let c = t.driverCode  { Text("Code: \(c)").font(EFont.body(11, weight: .bold)).foregroundColor(.eGreen) }
-                                }
-                                Spacer()
-                                HStack(spacing: 2) { Image(systemName: "star.fill").font(.system(size: 12)).foregroundColor(.eAccent); Text("4.9").font(EFont.body(13, weight: .bold)).foregroundColor(.eText) }
-                            }.padding(14).background(Color.eSurface2).clipShape(RoundedRectangle(cornerRadius: 14))
-                        }
-
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("ARRIVING IN").font(EFont.body(11, weight: .bold)).foregroundColor(.eTextMuted).kerning(0.8)
-                                Text(vm.mapEta).font(EFont.display(42, weight: .heavy)).foregroundColor(.eGreen)
-                            }
-                            Spacer()
-                            VStack(alignment: .trailing, spacing: 4) {
-                                Text("FARE").font(EFont.body(11, weight: .bold)).foregroundColor(.eTextMuted).kerning(0.8)
-                                Text(vm.currentTrip?.fareStr ?? "R0").font(EFont.display(26, weight: .heavy)).foregroundColor(.eText)
-                            }
-                        }.padding(16).background(Color.eSurface2).clipShape(RoundedRectangle(cornerRadius: 16))
-
-                        HStack(spacing: 12) {
-                            PActionBtn(icon: "phone.fill",          label: "Call")
-                            PActionBtn(icon: "message.fill",        label: "Chat")
-                            PActionBtn(icon: "square.and.arrow.up", label: "Share", color: .eGreen)
-                        }
-                        Button { vm.cancelRide() } label: {
-                            Text("Cancel Ride").font(EFont.body(15, weight: .semibold)).foregroundColor(.eRed)
-                                .frame(maxWidth: .infinity).frame(height: 50).background(Color.eSurface2).clipShape(RoundedRectangle(cornerRadius: 14))
-                        }
-                    }
-                }.padding(.horizontal, 20).padding(.bottom, 36)
-            }
-            .background(Color.eCard).clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-        }
-        .ignoresSafeArea().onAppear { spin = 360 }
+            ETaxiMap(origin: vm.driverCoord ?? locMgr.coordinate, target: pickupCoord, isPickup: true, fitRoute: false, eta: $vm.mapEta, distance: $vm.mapDist, traffic: $vm.mapTraffic).ignoresSafeArea()
+            PLiveDriverMatchedSheet(vm: vm)
+        }.ignoresSafeArea()
     }
 }
 
-private struct PNoDriverSheet: View {
+struct PLiveDriverMatchedSheet: View {
+    @ObservedObject var vm: PassengerViewModel
+    @State private var elapsed = 0; @State private var timer: Timer?
+    private let timeout = 60
+    var body: some View {
+        if vm.currentTrip == nil && !vm.searchTimedOut { Color.clear.onAppear { vm.screen = .home } }
+        else if vm.searchTimedOut { PNoDriverSheet(vm: vm) }
+        else { searchingSheet }
+    }
+    private var searchingSheet: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ESheetHandle().padding(.top, 12).padding(.bottom, 16)
+            // Status pill
+            HStack(spacing: 6) {
+                if vm.currentTrip?.driverName == nil { ProgressView().tint(.eGreen).scaleEffect(0.7); Text(vm.currentTrip?.statusLabel ?? "Finding driver…").font(EFont.body(12, weight: .bold)).foregroundColor(.eGreen); Spacer(); Text("\(max(0,timeout-elapsed))s").font(EFont.body(12, weight: .bold)).foregroundColor(.eTextMuted) }
+                else { Circle().fill(Color.eGreen).frame(width: 6, height: 6); Text(vm.currentTrip?.statusLabel ?? "Driver on the way").font(EFont.body(12, weight: .bold)).foregroundColor(.eGreen) }
+            }.padding(.horizontal,14).padding(.vertical,7).background(Color.eGreen.opacity(0.08)).overlay(Capsule().stroke(Color.eGreen.opacity(0.2),lineWidth:1)).clipShape(Capsule()).padding(.bottom,16)
+            // Countdown
+            if vm.currentTrip?.driverName == nil {
+                GeometryReader { geo in ZStack(alignment: .leading) { RoundedRectangle(cornerRadius:3).fill(Color.eBorder).frame(height:3); RoundedRectangle(cornerRadius:3).fill(elapsed>45 ? Color.eRed : Color.eGreen).frame(width: geo.size.width*CGFloat(elapsed)/CGFloat(timeout), height:3).animation(.linear(duration:1), value:elapsed) } }.frame(height:3).padding(.bottom,14)
+            }
+            // Driver card
+            if let name = vm.currentTrip?.driverName {
+                HStack(spacing: 14) {
+                    ZStack { Circle().fill(LinearGradient(colors:[Color(hex:"#1C2535"),Color(hex:"#252B38")],startPoint:.topLeading,endPoint:.bottomTrailing)).frame(width:60,height:60).overlay(Circle().stroke(Color.eBorder,lineWidth:2)); Text("👨🏾").font(.system(size:28)) }
+                    VStack(alignment: .leading, spacing: 4) { Text(name).font(EFont.display(18, weight: .bold)).foregroundColor(.eText); if let c=vm.currentTrip?.driverCode { Text("Code: \(c)").font(EFont.body(12)).foregroundColor(.eTextMuted) } }
+                    Spacer()
+                    if let v=vm.currentTrip?.vehicleInfo { Text(v).font(EFont.display(13,weight:.heavy)).foregroundColor(.eBackground).padding(.horizontal,10).padding(.vertical,6).background(Color.eText).clipShape(RoundedRectangle(cornerRadius:8)) }
+                }.padding(.bottom,18)
+            } else { HStack(spacing:12){ProgressView().tint(.eGreen); Text("Connecting you with a driver…").font(EFont.body(14)).foregroundColor(.eTextSoft)}.padding(.bottom,18) }
+            // ETA+fare
+            HStack {
+                VStack(alignment: .leading, spacing: 4) { Text("ARRIVING IN").font(EFont.body(11,weight:.semibold)).foregroundColor(.eTextSoft).kerning(0.5); Text(vm.mapEta).font(EFont.display(30,weight:.heavy)).foregroundColor(.eGreen) }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 4) { Text("FARE").font(EFont.body(11,weight:.semibold)).foregroundColor(.eTextSoft).kerning(0.5); Text(vm.currentTrip?.fareStr ?? "R0").font(EFont.display(18,weight:.bold)).foregroundColor(.eText) }
+            }.padding(.horizontal,18).padding(.vertical,14).background(Color.eSurface).overlay(RoundedRectangle(cornerRadius:13).stroke(Color.eBorder,lineWidth:1)).clipShape(RoundedRectangle(cornerRadius:13)).padding(.bottom,14)
+            // Actions
+            HStack(spacing: 10) { PDriverActionBtn(icon:"phone.fill",label:"Call"); PDriverActionBtn(icon:"message.fill",label:"Chat"); PDriverActionBtn(icon:"square.and.arrow.up",label:"Share",tint:.eGreen) }.padding(.bottom,14)
+            if vm.currentTrip?.canCancel==true || vm.currentTrip?.status=="searching" {
+                Button { vm.cancelRide() } label: { Text("Cancel Ride").font(EFont.body(14,weight:.semibold)).foregroundColor(.eRed).frame(maxWidth:.infinity).padding(.vertical,16).overlay(RoundedRectangle(cornerRadius:16).stroke(Color.eBorder,lineWidth:1.5)) }
+            }
+        }
+        .padding(.horizontal,20).padding(.bottom,40).background(Color.eCard).clipShape(RoundedRectangle(cornerRadius:28,style:.continuous))
+        .overlay(alignment:.top){RoundedRectangle(cornerRadius:28,style:.continuous).stroke(Color.eBorder,lineWidth:1)}
+        .onAppear { elapsed=0; timer=Timer.scheduledTimer(withTimeInterval:1,repeats:true){_ in elapsed+=1} }
+        .onDisappear { timer?.invalidate() }
+    }
+}
+
+struct PNoDriverSheet: View {
     @ObservedObject var vm: PassengerViewModel
     var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "car.fill").font(.system(size: 40)).foregroundColor(.eTextMuted.opacity(0.4))
-            Text("No Drivers Available").font(EFont.display(20, weight: .heavy)).foregroundColor(.eText)
-            Text("We couldn't find a driver nearby.\nTry again in a few minutes.")
-                .font(EFont.body(14)).foregroundColor(.eTextSoft).multilineTextAlignment(.center)
-            EPrimaryButton(title: "Try Again") { vm.retryRide() }
-            Button { vm.dismissNoDriver() } label: {
-                Text("Back to Home").font(EFont.body(15, weight: .semibold)).foregroundColor(.eTextMuted)
-                    .frame(maxWidth: .infinity).frame(height: 48).background(Color.eSurface)
-                    .clipShape(RoundedRectangle(cornerRadius: 14)).overlay(RoundedRectangle(cornerRadius: 14).stroke(Color.eBorder, lineWidth: 1.5))
-            }
+        VStack(spacing: 0) {
+            ESheetHandle().padding(.top,12).padding(.bottom,20)
+            Image(systemName:"car.fill").font(.system(size:40)).foregroundColor(.eTextMuted.opacity(0.4)).padding(.bottom,12)
+            Text("No Drivers Available").font(EFont.display(20,weight:.heavy)).foregroundColor(.eText)
+            Text("We couldn't find a driver nearby.\nTry again in a few minutes.").font(EFont.body(14)).foregroundColor(.eTextSoft).multilineTextAlignment(.center).lineSpacing(4).padding(.horizontal,30).padding(.top,6).padding(.bottom,28)
+            VStack(spacing: 10) {
+                Button { vm.retryRide() } label: { HStack(spacing:8){Image(systemName:"arrow.clockwise").font(.system(size:14,weight:.bold));Text("Try Again").font(EFont.body(16,weight:.bold))}.foregroundColor(.black).frame(maxWidth:.infinity).frame(height:52).background(Color.eGreen).clipShape(RoundedRectangle(cornerRadius:16)) }
+                Button { vm.dismissNoDriver() } label: { Text("Back to Home").font(EFont.body(15,weight:.semibold)).foregroundColor(.eTextMuted).frame(maxWidth:.infinity).frame(height:48).background(Color.eSurface).overlay(RoundedRectangle(cornerRadius:16).stroke(Color.eBorder,lineWidth:1.5)).clipShape(RoundedRectangle(cornerRadius:16)) }
+            }.padding(.horizontal,20).padding(.bottom,48)
         }
+        .background(Color.eCard).clipShape(RoundedRectangle(cornerRadius:28,style:.continuous))
+        .overlay(alignment:.top){RoundedRectangle(cornerRadius:28,style:.continuous).stroke(Color.eBorder,lineWidth:1)}
     }
 }
 
-private struct PActionBtn: View {
-    let icon: String; let label: String; var color: Color = .eText
+struct PDriverActionBtn: View {
+    let icon: String; let label: String; var tint: Color = .eText
     var body: some View {
         Button {} label: {
-            VStack(spacing: 6) { Image(systemName: icon).font(.system(size: 18)).foregroundColor(color); Text(label).font(EFont.body(12, weight: .semibold)).foregroundColor(color) }
-                .frame(maxWidth: .infinity).frame(height: 56).background(Color.eSurface2).clipShape(RoundedRectangle(cornerRadius: 14))
+            HStack(spacing:8){Image(systemName:icon).font(.system(size:14,weight:.semibold));Text(label).font(EFont.body(13,weight:.semibold))}
+                .foregroundColor(tint).frame(maxWidth:.infinity).padding(.vertical,14).background(Color.eSurface)
+                .overlay(RoundedRectangle(cornerRadius:13).stroke(Color.eBorder,lineWidth:1.5)).clipShape(RoundedRectangle(cornerRadius:13))
         }
     }
 }
 
-// MARK: - In Ride
+// MARK: - In Ride View (ZipRide InRideView + LiveInRideSheet)
 struct PInRideView: View {
+    @ObservedObject var vm: PassengerViewModel
+    @StateObject private var locMgr = LocationManager.shared
+    var dropoffCoord: CLLocationCoordinate2D? {
+        guard let t = vm.currentTrip else { return nil }
+        return CLLocationCoordinate2D(latitude: t.dropoffLat, longitude: t.dropoffLon)
+    }
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            ETaxiMap(origin: vm.driverCoord ?? locMgr.coordinate, target: dropoffCoord, isPickup: false, fitRoute: false, eta: $vm.mapEta, distance: $vm.mapDist, traffic: $vm.mapTraffic).ignoresSafeArea()
+            VStack { PInRideBar(eta: vm.mapEta, dist: vm.mapDist, trip: vm.currentTrip).padding(.horizontal,16).padding(.top,54); Spacer() }
+            PLiveInRideSheet(vm: vm)
+        }.ignoresSafeArea()
+    }
+}
+
+struct PInRideBar: View {
+    let eta: String; let dist: String; let trip: BETrip?
+    var body: some View {
+        HStack(spacing: 14) {
+            VStack(alignment:.leading,spacing:2){Text("ARRIVING IN").font(EFont.body(10,weight:.bold)).foregroundColor(.eTextSoft).kerning(0.5);Text(eta).font(EFont.display(18,weight:.heavy)).foregroundColor(.eGreen)}
+            Spacer()
+            VStack(alignment:.trailing,spacing:2){Text("REMAINING").font(EFont.body(10,weight:.bold)).foregroundColor(.eTextSoft).kerning(0.5);Text(dist).font(EFont.body(14,weight:.semibold)).foregroundColor(.eText)}
+            Spacer()
+            VStack(alignment:.trailing,spacing:2){Text("FARE").font(EFont.body(10,weight:.bold)).foregroundColor(.eTextSoft).kerning(0.5);Text(trip?.fareStr ?? "R0").font(EFont.display(18,weight:.heavy)).foregroundColor(.eText)}
+        }
+        .padding(.horizontal,18).padding(.vertical,12)
+        .background(ZStack{RoundedRectangle(cornerRadius:14).fill(Color.eCard);RoundedRectangle(cornerRadius:14).fill(.ultraThinMaterial).opacity(0.3)}.shadow(color:.black.opacity(0.3),radius:10,y:3))
+        .overlay(RoundedRectangle(cornerRadius:14).stroke(Color.eBorder.opacity(0.6),lineWidth:1))
+    }
+}
+
+struct PLiveInRideSheet: View {
     @ObservedObject var vm: PassengerViewModel
     @State private var showCancel = false
     var body: some View {
-        ZStack(alignment: .bottom) {
-            ETaxiMap(origin: vm.driverCoord ?? vm.pickupCoord, target: vm.dropoffCoord,
-                     isPickup: false, fitRoute: false,
-                     eta: $vm.mapEta, distance: $vm.mapDist, traffic: $vm.mapTraffic).ignoresSafeArea()
-            VStack {
-                HStack {
-                    HStack(spacing: 8) { Circle().fill(Color.eGreen).frame(width: 8, height: 8); Text("In Ride").font(EFont.body(13, weight: .bold)).foregroundColor(.eText) }
-                        .padding(.horizontal, 14).padding(.vertical, 8).background(Color.eCard.opacity(0.95)).clipShape(Capsule())
+        VStack(alignment: .leading, spacing: 0) {
+            ESheetHandle().padding(.top,12).padding(.bottom,8)
+            HStack {
+                HStack(spacing:6){Circle().fill(Color.eGreen).frame(width:6,height:6);Text("In Progress").font(EFont.body(12,weight:.bold)).foregroundColor(.eGreen)}.padding(.horizontal,12).padding(.vertical,6).background(Color.eGreen.opacity(0.08)).overlay(Capsule().stroke(Color.eGreen.opacity(0.2),lineWidth:1)).clipShape(Capsule())
+                Spacer(); Text(vm.currentTrip?.fareStr ?? "R0").font(EFont.display(18,weight:.heavy)).foregroundColor(.eGreen)
+            }.padding(.bottom,14)
+            if let name = vm.currentTrip?.driverName {
+                HStack(spacing:14){
+                    ZStack{Circle().fill(Color.eSurface).frame(width:44,height:44).overlay(Circle().stroke(Color.eBorder,lineWidth:1.5));Text("👨🏾").font(.system(size:22))}
+                    VStack(alignment:.leading,spacing:3){Text(name).font(EFont.body(14,weight:.bold)).foregroundColor(.eText);if let v=vm.currentTrip?.vehicleInfo{Text(v).font(EFont.body(11)).foregroundColor(.eTextMuted)}}
                     Spacer()
-                    VStack(spacing: 2) { Text(vm.mapEta).font(EFont.display(18, weight: .heavy)).foregroundColor(.eGreen); Text("to dropoff").font(EFont.body(10)).foregroundColor(.eTextSoft) }
-                        .padding(.horizontal, 14).padding(.vertical, 8).background(Color.eCard.opacity(0.95)).clipShape(RoundedRectangle(cornerRadius: 12))
-                }.padding(.horizontal, 16).padding(.top, 54)
-                if vm.mapTraffic == .heavy {
-                    HStack(spacing: 8) { Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.eAccent); Text("Heavy traffic ahead").font(EFont.body(13, weight: .semibold)).foregroundColor(.eText) }
-                        .padding(.horizontal, 14).padding(.vertical, 8).background(Color.eAccent.opacity(0.15)).clipShape(Capsule()).padding(.top, 8)
-                }
-                Spacer()
+                }.padding(.bottom,12)
             }
-            VStack(spacing: 14) {
-                ESheetHandle().padding(.top, 12)
-                HStack(spacing: 14) {
-                    VStack(spacing: 6) { Circle().fill(Color.eGreen).frame(width: 10, height: 10); Rectangle().fill(Color.eBorder).frame(width: 1, height: 20); Circle().fill(Color.eAccent).frame(width: 10, height: 10) }
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(vm.currentTrip?.pickupAddress ?? vm.pickupAddress).font(EFont.body(14, weight: .semibold)).foregroundColor(.eText).lineLimit(1)
-                        Text(vm.currentTrip?.dropoffAddress ?? vm.dropoffAddress).font(EFont.body(14, weight: .semibold)).foregroundColor(.eText).lineLimit(1)
-                    }
-                    Spacer()
-                    VStack(alignment: .trailing, spacing: 4) { Text(vm.mapDist).font(EFont.body(13, weight: .bold)).foregroundColor(.eTextSoft); Text(vm.mapEta).font(EFont.body(13, weight: .bold)).foregroundColor(.eGreen) }
-                }.padding(16).background(Color.eSurface2).clipShape(RoundedRectangle(cornerRadius: 16))
-                if let t = vm.currentTrip, let name = t.driverName {
-                    HStack(spacing: 14) {
-                        ZStack { Circle().fill(Color.eGreen.opacity(0.15)).frame(width: 44, height: 44); Text(String(name.prefix(1))).font(EFont.display(18, weight: .bold)).foregroundColor(.eGreen) }
-                        VStack(alignment: .leading, spacing: 2) { Text(name).font(EFont.body(14, weight: .bold)).foregroundColor(.eText); if let v = t.vehicleInfo { Text(v).font(EFont.body(12)).foregroundColor(.eTextSoft) } }
-                        Spacer()
-                        HStack(spacing: 10) {
-                            Button {} label: { Image(systemName: "phone.fill").font(.system(size: 16)).foregroundColor(.eText).frame(width: 38, height: 38).background(Color.eSurface).clipShape(Circle()) }
-                            Button {} label: { Image(systemName: "message.fill").font(.system(size: 16)).foregroundColor(.eText).frame(width: 38, height: 38).background(Color.eSurface).clipShape(Circle()) }
-                        }
-                    }.padding(14).background(Color.eSurface2).clipShape(RoundedRectangle(cornerRadius: 14))
-                }
-                if vm.currentTrip?.canCancel == true {
-                    Button { showCancel = true } label: {
-                        Text("Cancel Ride").font(EFont.body(15, weight: .semibold)).foregroundColor(.eRed)
-                            .frame(maxWidth: .infinity).frame(height: 48).background(Color.eSurface2).clipShape(RoundedRectangle(cornerRadius: 14))
-                    }
-                }
-            }.padding(.horizontal, 20).padding(.bottom, 36)
-            .background(Color.eCard).clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+            HStack(spacing:12){
+                VStack(spacing:6){Circle().fill(Color.eGreen).frame(width:10,height:10);Rectangle().fill(Color.eBorder).frame(width:1,height:16);Circle().fill(Color.eAccent).frame(width:10,height:10)}
+                VStack(alignment:.leading,spacing:10){Text(vm.currentTrip?.pickupAddress ?? vm.pickupAddress).font(EFont.body(12)).foregroundColor(.eText).lineLimit(1);Text(vm.currentTrip?.dropoffAddress ?? vm.dropoffAddress).font(EFont.body(12)).foregroundColor(.eText).lineLimit(1)}
+                Spacer()
+            }.padding(12).background(Color.eSurface).overlay(RoundedRectangle(cornerRadius:13).stroke(Color.eBorder,lineWidth:1)).clipShape(RoundedRectangle(cornerRadius:13)).padding(.bottom,12)
+            HStack(spacing:10){
+                PInRideActionBtn(icon:"phone.fill",label:"Call",tint:.eGreen)
+                PInRideActionBtn(icon:"message.fill",label:"Chat",tint:Color(hex:"#4488FF"))
+                PInRideActionBtn(icon:"shield.fill",label:"SOS",tint:.eRed)
+            }
         }
-        .ignoresSafeArea()
-        .alert("Cancel Ride?", isPresented: $showCancel) { Button("Cancel Ride", role: .destructive) { vm.cancelRide() }; Button("Keep Ride", role: .cancel) {} } message: { Text("A cancellation fee may apply.") }
+        .padding(.horizontal,20).padding(.bottom,40).background(Color.eCard).clipShape(RoundedRectangle(cornerRadius:28,style:.continuous))
+        .overlay(alignment:.top){RoundedRectangle(cornerRadius:28,style:.continuous).stroke(Color.eBorder,lineWidth:1)}
+        .alert("Cancel Ride?",isPresented:$showCancel){Button("Cancel Ride",role:.destructive){vm.cancelRide()};Button("Keep Ride",role:.cancel){}}
+        message:{Text("A cancellation fee may apply.")}
+    }
+}
+struct PInRideActionBtn: View {
+    let icon: String; let label: String; let tint: Color
+    var body: some View {
+        Button{} label: { HStack(spacing:6){Image(systemName:icon).font(.system(size:13));Text(label).font(EFont.body(13,weight:.semibold))}.foregroundColor(tint).frame(maxWidth:.infinity).padding(.vertical,13).background(Color.eSurface).overlay(RoundedRectangle(cornerRadius:13).stroke(Color.eBorder,lineWidth:1)).clipShape(RoundedRectangle(cornerRadius:13)) }
     }
 }
 
-// MARK: - Trip Complete
-struct PTripCompleteView: View {
+// MARK: - Payment / Rating (ZipRide PaymentView)
+struct PPaymentView: View {
     @ObservedObject var vm: PassengerViewModel
-    @State private var appeared = false
-    let tags: [String] = ["Great driver","Clean car","On time","Safe driving","Friendly","Smooth ride"]
+    @State private var amountVisible = false
+    private let tags = ["Great driver","Clean car","On time","Safe driving","Friendly","Smooth ride"]
     var body: some View {
         ZStack { Color.eBackground.ignoresSafeArea()
             ScrollView(showsIndicators: false) {
-                VStack(spacing: 20) {
-                    Spacer(minLength: 40)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Trip Complete").font(EFont.display(20,weight:.heavy)).foregroundColor(.eText).padding(.top,54).padding(.bottom,16).frame(maxWidth:.infinity,alignment:.leading)
                     ZStack {
-                        Circle().fill(Color.eGreen.opacity(0.12)).frame(width: 120, height: 120).scaleEffect(appeared ? 1 : 0.5)
-                        Image(systemName: "checkmark").font(.system(size: 44, weight: .bold)).foregroundColor(.eGreen).scaleEffect(appeared ? 1 : 0)
-                    }.animation(.spring(response: 0.6, dampingFraction: 0.7).delay(0.1), value: appeared)
-                    Text("Trip Complete").font(EFont.display(24, weight: .heavy)).foregroundColor(.eText)
-                    Text(vm.currentTrip?.fareStr ?? "R0").font(.system(size: 56, weight: .black, design: .rounded)).foregroundColor(.eText)
-                        .opacity(appeared ? 1 : 0).animation(.easeOut(duration: 0.5).delay(0.3), value: appeared)
-                    if let t = vm.currentTrip {
+                        LinearGradient(colors:[Color.eCard,Color(hex:"#0E1520")],startPoint:.init(x:0.2,y:0),endPoint:.init(x:0.8,y:1))
+                        RadialGradient(colors:[Color.eGreen.opacity(0.08),.clear],center:.top,startRadius:0,endRadius:160)
                         VStack(spacing: 0) {
-                            tcRow(icon: "location.fill", color: .eGreen, label: "Pickup", val: t.pickupAddress)
-                            Divider().background(Color.eBorder).padding(.leading, 54)
-                            tcRow(icon: "flag.checkered", color: .eAccent, label: "Dropoff", val: t.dropoffAddress)
-                            if let km = t.estimatedDistanceKm { Divider().background(Color.eBorder).padding(.leading, 54); tcRow(icon: "road.lanes", color: .eTextSoft, label: "Distance", val: String(format: "%.1f km", km)) }
-                        }.background(Color.eSurface).clipShape(RoundedRectangle(cornerRadius: 16)).padding(.horizontal, 20)
-                    }
-                    Text("Rate your driver").font(EFont.body(16, weight: .bold)).foregroundColor(.eText)
-                    HStack(spacing: 12) {
-                        ForEach(1...5, id: \.self) { star in
-                            Button { withAnimation { vm.selectedRating = star } } label: {
-                                Image(systemName: star <= vm.selectedRating ? "star.fill" : "star").font(.system(size: 36)).foregroundColor(star <= vm.selectedRating ? .eAccent : .eTextMuted).scaleEffect(star == vm.selectedRating ? 1.15 : 1)
-                            }
-                        }
-                    }
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 110), spacing: 10)], spacing: 10) {
-                        ForEach(tags, id: \.self) { tag in
-                            ratingTagChip(tag)
-                        }
-                    }.padding(.horizontal, 20)
-                    EPrimaryButton(title: "Submit Rating") { vm.submitRating() }.padding(.horizontal, 20)
-                    Button { vm.goHome() } label: { Text("Skip").font(EFont.body(14)).foregroundColor(.eTextMuted).frame(maxWidth: .infinity).padding(.vertical, 14) }
-                    Spacer(minLength: 40)
-                }
-            }
-        }.onAppear { withAnimation { appeared = true } }
-    }
-    @ViewBuilder private func ratingTagChip(_ tag: String) -> some View {
-        let sel = vm.ratingTags.contains(tag)
-        Button {
-            withAnimation { if sel { vm.ratingTags.remove(tag) } else { vm.ratingTags.insert(tag) } }
-        } label: {
-            Text(tag)
-                .font(EFont.body(13, weight: sel ? .bold : .regular))
-                .foregroundColor(sel ? .black : .eText)
-                .padding(.horizontal, 14).padding(.vertical, 8)
-                .background(sel ? Color.eGreen : Color.eSurface)
-                .clipShape(Capsule())
-                .overlay(Capsule().stroke(sel ? Color.clear : Color.eBorder, lineWidth: 1))
-        }
-    }
-    @ViewBuilder private func tcRow(icon: String, color: Color, label: String, val: String) -> some View {
-        HStack(spacing: 14) {
-            ZStack { RoundedRectangle(cornerRadius: 10).fill(color.opacity(0.12)).frame(width: 36, height: 36); Image(systemName: icon).font(.system(size: 14)).foregroundColor(color) }
-            VStack(alignment: .leading, spacing: 2) { Text(label).font(EFont.body(11)).foregroundColor(.eTextMuted); Text(val).font(EFont.body(14, weight: .semibold)).foregroundColor(.eText).lineLimit(1) }
-            Spacer()
-        }.padding(.horizontal, 16).padding(.vertical, 14)
-    }
-}
-
-// MARK: - Custom Hire
-struct PCustomHireView: View {
-    @ObservedObject var vm: PassengerViewModel
-    @StateObject private var locMgr = LocationManager.shared
-    @State private var mapRegion = MKCoordinateRegion(center: .init(latitude: -26.1076, longitude: 28.0567), span: .init(latitudeDelta: 0.02, longitudeDelta: 0.02))
-    @State private var showDatePicker = false
-    let durations: [(String, String, String)] = [("⏰","Hourly","hourly"),("🌤","Half Day","halfday"),("☀️","Full Day","fullday"),("🏖","Weekend","weekend")]
-    var body: some View {
-        ZStack {
-            Map(coordinateRegion: $mapRegion, showsUserLocation: true).ignoresSafeArea()
-            VStack {
-                HStack {
-                    Button { vm.screen = .home } label: { Image(systemName: "arrow.left").font(.system(size: 16, weight: .semibold)).foregroundColor(.eText).frame(width: 42, height: 42).background(Color.eSurface.opacity(0.95)).clipShape(RoundedRectangle(cornerRadius: 12)) }
-                    VStack(alignment: .leading, spacing: 2) { Text("Custom Hire").font(EFont.display(18, weight: .heavy)).foregroundColor(.eText); Text("Flat-rate packages").font(EFont.body(12)).foregroundColor(.eTextSoft) }.padding(.leading, 8)
-                    Spacer()
-                    Button { vm.screen = .booking } label: { HStack(spacing: 5) { Text("⚡️").font(.system(size: 11)); Text("Standard").font(EFont.body(12, weight: .bold)).foregroundColor(.eGreen) }.padding(.horizontal, 12).padding(.vertical, 7).background(Color.eGreen.opacity(0.12)).clipShape(Capsule()) }
-                }.padding(.horizontal, 16).padding(.top, 52); Spacer()
-            }
-            VStack {
-                Spacer()
-                VStack(spacing: 0) {
-                    ESheetHandle().padding(.top, 12).padding(.bottom, 16)
-                    ScrollView(showsIndicators: false) {
-                        VStack(spacing: 16) {
-                            VStack(spacing: 0) {
-                                HStack(spacing: 12) { Circle().fill(Color.eGreen).frame(width: 10, height: 10); Text(vm.pickupAddress.isEmpty ? "Pickup location" : vm.pickupAddress).font(EFont.body(15)).foregroundColor(vm.pickupAddress.isEmpty ? .eTextMuted : .eText).lineLimit(1); Spacer() }.padding(.horizontal, 16).padding(.vertical, 14)
-                                Divider().background(Color.eBorder).padding(.leading, 38)
-                                HStack(spacing: 12) { ZStack { Circle().stroke(Color.eTextSoft, lineWidth: 1.5).frame(width: 10, height: 10); Circle().fill(Color.eTextSoft).frame(width: 5, height: 5) }; Text(vm.dropoffAddress.isEmpty ? "Destination (optional)" : vm.dropoffAddress).font(EFont.body(15)).foregroundColor(vm.dropoffAddress.isEmpty ? .eTextMuted : .eText).lineLimit(1); Spacer() }.padding(.horizontal, 16).padding(.vertical, 14)
-                            }.background(Color.eSurface2).clipShape(RoundedRectangle(cornerRadius: 16))
-                            VStack(alignment: .leading, spacing: 12) {
-                                Label("Start Date & Time", systemImage: "calendar").font(EFont.body(14, weight: .semibold)).foregroundColor(.eTextSoft)
-                                HStack(spacing: 12) {
-                                    Button { showDatePicker.toggle() } label: { Text(vm.hireDate.formatted(.dateTime.day().month(.abbreviated).year())).font(EFont.body(16, weight: .bold)).foregroundColor(.eText).padding(.horizontal, 16).padding(.vertical, 12).background(Color.eSurface2).clipShape(RoundedRectangle(cornerRadius: 12)) }
-                                    Button { showDatePicker.toggle() } label: { Text(vm.hireDate.formatted(.dateTime.hour().minute())).font(EFont.body(16, weight: .bold)).foregroundColor(.eText).padding(.horizontal, 16).padding(.vertical, 12).background(Color.eSurface2).clipShape(RoundedRectangle(cornerRadius: 12)) }
-                                }
-                                if showDatePicker { DatePicker("", selection: $vm.hireDate, in: Date()...).datePickerStyle(.graphical).tint(.eGreen) }
-                            }.padding(16).background(Color.eSurface2).clipShape(RoundedRectangle(cornerRadius: 16))
-                            VStack(alignment: .leading, spacing: 12) {
-                                Label("Duration", systemImage: "clock").font(EFont.body(14, weight: .semibold)).foregroundColor(.eTextSoft)
-                                HStack(spacing: 10) {
-                                    ForEach(durations, id: \.1) { emoji, label, key in
-                                        let sel = vm.hireDuration == key
-                                        Button { withAnimation(.spring(response: 0.3)) { vm.hireDuration = key } } label: {
-                                            VStack(spacing: 6) { Text(emoji).font(.system(size: 24)); Text(label).font(EFont.body(12, weight: sel ? .bold : .regular)).foregroundColor(sel ? .black : .eText) }
-                                                .frame(maxWidth: .infinity).frame(height: 72)
-                                                .background(sel ? Color(hex: "#6366F1") : Color.eSurface).clipShape(RoundedRectangle(cornerRadius: 14))
-                                                .overlay(RoundedRectangle(cornerRadius: 14).stroke(sel ? Color.clear : Color.eBorder, lineWidth: 1))
-                                        }
-                                    }
-                                }
-                            }.padding(16).background(Color.eSurface2).clipShape(RoundedRectangle(cornerRadius: 16))
-                            if let err = vm.errorMessage { EErrorBanner(message: err) }
-                            Spacer(minLength: 80)
-                        }.padding(.horizontal, 20)
-                    }
-                }.background(Color.eSurface).clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous)).frame(maxHeight: UIScreen.main.bounds.height * 0.72)
-                Button { vm.confirmHire() } label: {
-                    HStack(spacing: 10) { Image(systemName: "calendar.badge.checkmark").foregroundColor(.black); Text(vm.hireEstimatedFare > 0 ? "Confirm Hire · R\(Int(vm.hireEstimatedFare))" : "Confirm Hire").font(EFont.body(16, weight: .bold)).foregroundColor(.black) }
-                        .frame(maxWidth: .infinity).frame(height: 56).background(vm.isLoading ? Color.eSurface : Color(hex: "#6366F1")).clipShape(RoundedRectangle(cornerRadius: 16))
-                }.disabled(vm.isLoading).padding(.horizontal, 20).padding(.vertical, 12).background(Color.eSurface)
-            }
-        }.ignoresSafeArea().onAppear { if let c = locMgr.coordinate { mapRegion.center = c } }
-    }
-}
-
-// MARK: - Hire Confirmed
-struct PHireConfirmedView: View {
-    @ObservedObject var vm: PassengerViewModel
-    @State private var remaining: TimeInterval = 0; @State private var timer: Timer?
-    var pickupDate: Date {
-        guard let s = vm.currentTrip?.scheduledAt, let d = ISO8601DateFormatter().date(from: s) else { return vm.hireDate }
-        return d
-    }
-    var countdown: String {
-        let t = Int(remaining); guard t > 0 else { return "Now!" }
-        let d=t/86400; let h=(t%86400)/3600; let m=(t%3600)/60
-        if d > 0 { return "\(d)d \(h)h \(m)m" }; if h > 0 { return "\(h)h \(m)m" }; return "\(m)m"
-    }
-    var body: some View {
-        ZStack { Color.eBackground.ignoresSafeArea()
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 24) {
-                    Spacer(minLength: 32)
-                    HStack(spacing: 10) { Circle().fill(Color(hex: "#6366F1")).frame(width: 10, height: 10); Text("Hire Confirmed").font(EFont.body(16, weight: .bold)).foregroundColor(.eText) }
-                        .padding(.horizontal, 20).padding(.vertical, 12).background(Color(hex: "#1E1B3A")).clipShape(Capsule())
-                    Text(countdown).font(.system(size: 56, weight: .black, design: .rounded)).foregroundColor(.eText)
-                    Text("until pickup").font(EFont.body(16)).foregroundColor(.eTextSoft)
+                            ZStack{Circle().fill(Color.eGreen.opacity(0.1)).frame(width:64,height:64);Circle().stroke(Color.eGreen.opacity(0.3),lineWidth:2).frame(width:64,height:64);Image(systemName:"checkmark").font(.system(size:26,weight:.bold)).foregroundColor(.eGreen)}.padding(.bottom,14).scaleEffect(amountVisible ? 1:0.5).opacity(amountVisible ? 1:0)
+                            Text("Total Paid").font(EFont.body(13)).foregroundColor(.eTextSoft).padding(.bottom,6)
+                            HStack(alignment:.firstTextBaseline,spacing:2){Text("R").font(EFont.display(22,weight:.bold)).foregroundColor(.eGreen).baselineOffset(12);Text("\(Int(vm.currentTrip?.totalFare ?? 0))").font(EFont.display(46,weight:.heavy)).foregroundColor(.eText).kerning(-2)}.opacity(amountVisible ? 1:0).offset(y:amountVisible ? 0:20)
+                        }.padding(.vertical,28)
+                    }.clipShape(RoundedRectangle(cornerRadius:24,style:.continuous)).overlay(RoundedRectangle(cornerRadius:24,style:.continuous).stroke(Color.eBorder,lineWidth:1)).padding(.bottom,16)
+                    // Rating card
                     VStack(spacing: 0) {
-                        hcRow(icon: "calendar", bg: Color(hex: "#2A2460"), label: "Start", val: pickupDate.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).hour().minute()))
-                        Divider().background(Color.eBorder).padding(.leading, 56)
-                        hcRow(icon: "clock.fill", bg: Color(hex: "#3A2A00"), label: "Duration", val: "\(vm.hireDurationHours) hr\(vm.hireDurationHours > 1 ? "s" : "")")
-                        Divider().background(Color.eBorder).padding(.leading, 56)
-                        hcRow(icon: "location.fill", bg: Color.eGreen.opacity(0.2), label: "Pickup", val: vm.pickupAddress)
-                        if !vm.dropoffAddress.isEmpty { Divider().background(Color.eBorder).padding(.leading, 56); hcRow(icon: "mappin", bg: Color(hex: "#1A1A3A"), label: "Destination", val: vm.dropoffAddress) }
-                        Divider().background(Color.eBorder).padding(.leading, 56)
-                        hcRow(icon: "banknote.fill", bg: Color(hex: "#2A2000"), label: "Total Fare", val: "R\(Int(vm.currentTrip?.totalFare ?? vm.hireEstimatedFare))")
-                    }.background(Color.eSurface).clipShape(RoundedRectangle(cornerRadius: 20)).padding(.horizontal, 20)
-                    EPrimaryButton(title: "Done") { vm.goHome() }.padding(.horizontal, 20)
-                    Spacer(minLength: 40)
-                }
+                        Text("How was your ride?").font(EFont.body(13)).foregroundColor(.eTextSoft).padding(.bottom,14)
+                        HStack(spacing:10){ForEach(1...5,id:\.self){i in Button{withAnimation(.spring(response:0.3)){vm.selectedRating=i}}label:{Image(systemName:i<=vm.selectedRating ? "star.fill":"star").font(.system(size:32)).foregroundColor(i<=vm.selectedRating ? .eAccent:.eBorder).scaleEffect(i==vm.selectedRating ? 1.15:1)}}}.padding(.bottom,16)
+                        VStack(alignment:.leading,spacing:8){
+                            HStack(spacing:8){ForEach(tags.prefix(3),id:\.self){tag in ratingChip(tag)}}
+                            HStack(spacing:8){ForEach(Array(tags.dropFirst(3)),id:\.self){tag in ratingChip(tag)}}
+                        }.frame(maxWidth:.infinity,alignment:.center)
+                    }.padding(18).background(Color.eCard).overlay(RoundedRectangle(cornerRadius:16).stroke(Color.eBorder,lineWidth:1)).clipShape(RoundedRectangle(cornerRadius:16)).padding(.bottom,24)
+                    EPrimaryButton(title:"Submit Rating"){vm.submitRating()}
+                    Button{vm.goHome()}label:{Text("Skip").font(EFont.body(14)).foregroundColor(.eTextMuted).frame(maxWidth:.infinity).padding(.vertical,14)}
+                }.padding(.horizontal,20).padding(.bottom,48)
             }
-        }
-        .onAppear { remaining = pickupDate.timeIntervalSinceNow; timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in remaining = pickupDate.timeIntervalSinceNow } }
-        .onDisappear { timer?.invalidate() }
+        }.onAppear{withAnimation(.spring(response:0.8).delay(0.3)){amountVisible=true}}
     }
-    @ViewBuilder private func hcRow(icon: String, bg: Color, label: String, val: String) -> some View {
-        HStack(spacing: 14) {
-            ZStack { RoundedRectangle(cornerRadius: 10).fill(bg).frame(width: 36, height: 36); Image(systemName: icon).font(.system(size: 16)).foregroundColor(.eText) }
-            VStack(alignment: .leading, spacing: 2) { Text(label).font(EFont.body(12)).foregroundColor(.eTextSoft); Text(val).font(EFont.body(15, weight: .semibold)).foregroundColor(.eText) }
-            Spacer()
-        }.padding(.horizontal, 16).padding(.vertical, 14)
+    @ViewBuilder private func ratingChip(_ tag: String) -> some View {
+        let sel = vm.ratingTags.contains(tag)
+        Button{if sel{vm.ratingTags.remove(tag)}else{vm.ratingTags.insert(tag)}}label:{Text(tag).font(EFont.body(12,weight:.semibold)).foregroundColor(sel ? .eGreen:.eTextSoft).padding(.horizontal,12).padding(.vertical,6).background(sel ? Color.eGreen.opacity(0.1):Color.eSurface).overlay(Capsule().stroke(sel ? Color.eGreen.opacity(0.3):Color.eBorder,lineWidth:1)).clipShape(Capsule())}
     }
 }
 
-// MARK: - History
+// MARK: - History (ZipRide HistoryView)
 struct PHistoryView: View {
     @ObservedObject var vm: PassengerViewModel
     @State private var filter: String? = nil
-    var filtered: [BETrip] {
-        guard let f = filter else { return vm.tripHistory }
-        return vm.tripHistory.filter { f == "cancelled" ? $0.status.contains("cancelled") || $0.status == "no_driver_found" : $0.status == f }
-    }
+    var filtered: [BETrip] { guard let f=filter else{return vm.tripHistory}; return vm.tripHistory.filter{ f=="cancelled" ? $0.status.contains("cancelled")||$0.status=="no_driver_found" : $0.status==f } }
     var body: some View {
-        ZStack { Color.eBackground.ignoresSafeArea()
-            VStack(spacing: 0) {
-                HStack {
-                    Button { vm.screen = .home } label: { Image(systemName: "arrow.left").font(.system(size: 16, weight: .semibold)).foregroundColor(.eText).frame(width: 38, height: 38).background(Color.eSurface).clipShape(RoundedRectangle(cornerRadius: 10)) }
-                    Text("My Trips").font(EFont.display(22, weight: .heavy)).foregroundColor(.eText); Spacer()
-                }.padding(.horizontal, 20).padding(.top, 54).padding(.bottom, 16)
-                HStack(spacing: 10) { phFilter("All", nil); phFilter("Completed", "completed"); phFilter("Cancelled", "cancelled") }.padding(.horizontal, 20).padding(.bottom, 16)
-                if vm.tripHistory.isEmpty {
-                    Spacer()
-                    VStack(spacing: 16) { Image(systemName: "car.fill").font(.system(size: 48)).foregroundColor(.eTextMuted); Text("No trips yet").font(EFont.display(20, weight: .heavy)).foregroundColor(.eText); Text("Your trips will appear here").font(EFont.body(14)).foregroundColor(.eTextSoft) }
-                    Spacer()
-                } else {
-                    ScrollView(showsIndicators: false) { LazyVStack(spacing: 12) { ForEach(filtered) { phCard($0) } }.padding(.horizontal, 20).padding(.bottom, 40) }
-                }
+        ZStack{Color.eBackground.ignoresSafeArea()
+            ScrollView(showsIndicators:false){VStack(alignment:.leading,spacing:0){
+                Text("My Trips").font(EFont.display(26,weight:.heavy)).foregroundColor(.eText).kerning(-0.5).padding(.top,54).padding(.bottom,16)
+                HStack(spacing:8){PFilterTab(label:"All",isActive:filter==nil){withAnimation{filter=nil}};PFilterTab(label:"Completed",isActive:filter=="completed"){withAnimation{filter="completed"}};PFilterTab(label:"Cancelled",isActive:filter=="cancelled"){withAnimation{filter="cancelled"}}}.padding(.bottom,20)
+                if filtered.isEmpty { VStack(spacing:16){Image(systemName:"clock.badge.xmark").font(.system(size:48)).foregroundColor(.eGreen.opacity(0.4));Text("No trips yet").font(EFont.display(18,weight:.bold)).foregroundColor(.eText);Text("Your trip history will appear here").font(EFont.body(14)).foregroundColor(.eTextMuted)}.frame(maxWidth:.infinity).padding(.vertical,60) }
+                else { VStack(spacing:10){ForEach(filtered){PTripCard(trip:$0)}}.padding(.bottom,8) }
+                Spacer(minLength:100)
+            }.padding(.horizontal,20)}
+        }.task{await vm.loadHistory()}
+    }
+}
+struct PFilterTab: View {
+    let label:String;let isActive:Bool;let action:()->Void
+    var body: some View{Button(action:action){Text(label).font(EFont.body(13,weight:isActive ? .bold:.semibold)).foregroundColor(isActive ? .black:.eTextSoft).padding(.horizontal,16).padding(.vertical,8).background(isActive ? Color.eGreen:Color.clear).overlay(Capsule().stroke(isActive ? Color.clear:Color.eBorder,lineWidth:1.5)).clipShape(Capsule())}}
+}
+struct PTripCard: View {
+    let trip: BETrip
+    var body: some View {
+        VStack(spacing:0){
+            HStack(alignment:.top){VStack(alignment:.leading,spacing:3){Text(trip.rideType.capitalized).font(EFont.display(15,weight:.bold)).foregroundColor(.eText);Text(trip.statusLabel).font(EFont.body(12)).foregroundColor(.eTextMuted)};Spacer()
+                VStack(alignment:.trailing,spacing:2){if trip.status=="completed"{Text(trip.fareStr).font(EFont.display(18,weight:.heavy)).foregroundColor(.eText);Text("Completed").font(EFont.body(11)).foregroundColor(.eTextMuted)}else{Text("Cancelled").font(EFont.display(15,weight:.bold)).foregroundColor(.eRed)}}
+            }.padding(.bottom,14)
+            VStack(alignment:.leading,spacing:0){
+                HStack(spacing:10){Image(systemName:"circle.fill").font(.system(size:9)).foregroundColor(.eGreen).frame(width:14);Text(trip.pickupAddress).font(EFont.body(12)).foregroundColor(.eTextSoft)}
+                Rectangle().fill(Color.eBorder).frame(width:1,height:14).padding(.leading,6)
+                HStack(spacing:10){Image(systemName:"square.fill").font(.system(size:9)).foregroundColor(trip.status=="completed" ? .eAccent:.eTextMuted).frame(width:14);Text(trip.dropoffAddress).font(EFont.body(12)).foregroundColor(.eTextSoft)}
             }
-        }.task { await vm.loadHistory() }
-    }
-    @ViewBuilder private func phFilter(_ label: String, _ key: String?) -> some View {
-        Button { withAnimation { filter = key } } label: {
-            Text(label).font(EFont.body(13, weight: filter == key ? .bold : .regular)).foregroundColor(filter == key ? .black : .eText)
-                .padding(.horizontal, 16).padding(.vertical, 8).background(filter == key ? Color.eGreen : Color.eSurface).clipShape(Capsule())
-        }
-    }
-    @ViewBuilder private func phCard(_ trip: BETrip) -> some View {
-        let color: Color = trip.status == "completed" ? .eGreen : trip.status.contains("cancelled") ? .eRed : .eTextSoft
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) { Text(trip.rideType.capitalized).font(EFont.body(11, weight: .bold)).foregroundColor(.eTextMuted).kerning(0.5); Text(trip.pickupAddress).font(EFont.body(14, weight: .semibold)).foregroundColor(.eText).lineLimit(1) }
-                Spacer()
-                VStack(alignment: .trailing, spacing: 4) { Text(trip.fareStr).font(EFont.display(18, weight: .heavy)).foregroundColor(.eText); Text(trip.statusLabel).font(EFont.body(11, weight: .bold)).foregroundColor(color) }
-            }.padding(.horizontal, 16).padding(.top, 16)
-            Divider().background(Color.eBorder).padding(.horizontal, 16).padding(.vertical, 10)
-            HStack(spacing: 10) {
-                Image(systemName: "mappin").font(.system(size: 12)).foregroundColor(.eTextMuted)
-                Text(trip.dropoffAddress).font(EFont.body(13)).foregroundColor(.eTextSoft).lineLimit(1); Spacer()
-                if let km = trip.estimatedDistanceKm { Text(String(format: "%.1f km", km)).font(EFont.body(12)).foregroundColor(.eTextMuted) }
-            }.padding(.horizontal, 16).padding(.bottom, 16)
-        }.background(Color.eSurface).clipShape(RoundedRectangle(cornerRadius: 16)).overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.eBorder, lineWidth: 1))
+            if trip.status=="completed"{HStack(spacing:8){HStack(spacing:2){ForEach(1...5,id:\.self){i in Image(systemName:"star.fill").font(.system(size:11)).foregroundColor(.eAccent)}};if let km=trip.estimatedDistanceKm{Text(String(format:"%.1f km",km)).font(EFont.body(12)).foregroundColor(.eTextMuted)}}.padding(.top,12).overlay(alignment:.top){Rectangle().fill(Color.eBorder).frame(height:1).offset(y:-1)}}
+        }.padding(16).background(Color.eCard).overlay(RoundedRectangle(cornerRadius:16).stroke(Color.eBorder,lineWidth:1)).clipShape(RoundedRectangle(cornerRadius:16)).opacity(trip.status.contains("cancelled") ? 0.7:1)
     }
 }
 
-// MARK: - Wallet
-struct PWalletView: View {
-    @ObservedObject var vm: PassengerViewModel
-    var body: some View {
-        ZStack { Color.eBackground.ignoresSafeArea()
-            VStack(spacing: 24) {
-                HStack { Button { vm.screen = .home } label: { Image(systemName: "arrow.left").font(.system(size: 16, weight: .semibold)).foregroundColor(.eText).frame(width: 38, height: 38).background(Color.eSurface).clipShape(RoundedRectangle(cornerRadius: 10)) }; Text("Wallet").font(EFont.display(22, weight: .heavy)).foregroundColor(.eText); Spacer() }.padding(.horizontal, 20).padding(.top, 54)
-                Spacer(); Image(systemName: "creditcard.fill").font(.system(size: 48)).foregroundColor(.eTextSoft); Text("Wallet coming soon").font(EFont.body(15)).foregroundColor(.eTextSoft); Spacer()
-            }
-        }
-    }
-}
-
-// MARK: - Profile
+// MARK: - Profile (ZipRide ProfileView)
 struct PProfileView: View {
     @EnvironmentObject var authVM: AuthViewModel
     @ObservedObject var vm: PassengerViewModel
+    @State private var showSignOut = false
     var body: some View {
-        ZStack { Color.eBackground.ignoresSafeArea()
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 0) {
-                    HStack { Button { vm.screen = .home } label: { Image(systemName: "arrow.left").font(.system(size: 16, weight: .semibold)).foregroundColor(.eText).frame(width: 38, height: 38).background(Color.eSurface).clipShape(RoundedRectangle(cornerRadius: 10)) }; Text("Profile").font(EFont.display(22, weight: .heavy)).foregroundColor(.eText); Spacer() }.padding(.horizontal, 20).padding(.top, 54).padding(.bottom, 28)
-                    ZStack { Circle().fill(Color.eGreen).frame(width: 88, height: 88); Text(vm.user.initials).font(EFont.display(32, weight: .heavy)).foregroundColor(.black) }.padding(.bottom, 16)
-                    Text(vm.user.fullName).font(EFont.display(22, weight: .heavy)).foregroundColor(.eText)
-                    Text(vm.user.phone).font(EFont.body(15)).foregroundColor(.eTextSoft).padding(.bottom, 8)
-                    VStack(spacing: 0) {
-                        ppRow(icon: "clock", label: "Trip History") { vm.screen = .history; Task { await vm.loadHistory() } }
-                        Divider().background(Color.eBorder).padding(.leading, 54)
-                        ppRow(icon: "creditcard", label: "Wallet") { vm.screen = .wallet }
-                        Divider().background(Color.eBorder).padding(.leading, 54)
-                        ppRow(icon: "questionmark.circle", label: "Help & Support") {}
-                    }.background(Color.eSurface).clipShape(RoundedRectangle(cornerRadius: 20)).padding(.horizontal, 20).padding(.top, 28)
-                    Button { authVM.logout() } label: {
-                        HStack { Image(systemName: "rectangle.portrait.and.arrow.right"); Text("Sign Out") }
-                            .font(EFont.body(15, weight: .semibold)).foregroundColor(.eRed)
-                            .frame(maxWidth: .infinity).frame(height: 52).background(Color.eSurface).clipShape(RoundedRectangle(cornerRadius: 16))
-                            .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.eBorder, lineWidth: 1))
-                    }.padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 40)
+        ZStack{Color.eBackground.ignoresSafeArea()
+            ScrollView(showsIndicators:false){VStack(spacing:0){
+                ZStack(alignment:.bottom){
+                    LinearGradient(colors:[Color(hex:"#0A1F14"),Color(hex:"#0A1018")],startPoint:.topLeading,endPoint:.bottomTrailing).frame(height:260)
+                    HStack{Text("Profile").font(EFont.display(20,weight:.heavy)).foregroundColor(.eText);Spacer();ZStack{Image(systemName:"bell.fill").font(.system(size:18)).foregroundColor(.eText).frame(width:40,height:40).background(Color.eSurface).clipShape(Circle());Circle().fill(Color.eRed).frame(width:8,height:8).offset(x:12,y:-12)}}.padding(.horizontal,20).frame(maxHeight:.infinity,alignment:.top).padding(.top,54)
+                    VStack(spacing:10){ZStack{Circle().fill(LinearGradient(colors:[Color(hex:"#1C2535"),Color(hex:"#252B38")],startPoint:.topLeading,endPoint:.bottomTrailing)).frame(width:90,height:90).overlay(Circle().stroke(Color.eGreen,lineWidth:3));Text(vm.user.initials).font(EFont.display(32,weight:.heavy)).foregroundColor(.eGreen)}.shadow(color:Color.eGreen.opacity(0.25),radius:20)
+                        Text(vm.user.fullName).font(EFont.display(20,weight:.heavy)).foregroundColor(.eText);Text(vm.user.phone).font(EFont.body(13)).foregroundColor(.eTextSoft)
+                        HStack(spacing:5){Image(systemName:"star.fill").font(.system(size:11)).foregroundColor(.eGreen);Text("5.00").font(EFont.body(13,weight:.bold)).foregroundColor(.eGreen);Text("· \(vm.tripHistory.count) trips").font(EFont.body(12)).foregroundColor(.eTextMuted)}.padding(.horizontal,14).padding(.vertical,6).background(Color.eGreen.opacity(0.08)).overlay(Capsule().stroke(Color.eGreen.opacity(0.2),lineWidth:1)).clipShape(Capsule())
+                    }.padding(.bottom,20)
                 }
-            }
+                HStack(spacing:0){PStatCell(val:"\(vm.tripHistory.count)",label:"Trips",color:.eGreen);Rectangle().fill(Color.eBorder).frame(width:1,height:50);PStatCell(val:"R\(Int(vm.tripHistory.compactMap{$0.totalFare}.reduce(0,+)))",label:"Spent",color:.eAccent);Rectangle().fill(Color.eBorder).frame(width:1,height:50);PStatCell(val:"5.0",label:"Rating",color:Color(hex:"#4488FF"))}.background(Color.eCard).overlay(alignment:.bottom){Rectangle().fill(Color.eBorder).frame(height:1)}
+                PPSection("ACCOUNT")
+                PPRow(icon:"person.fill",bg:.init(hex:"#4488FF"),title:"Personal Information",sub:vm.user.email ?? "Tap to edit"){}
+                PPRow(icon:"bell.fill",bg:.eAccent,title:"Notifications",sub:"Manage alerts"){}
+                PPRow(icon:"creditcard.fill",bg:.eGreen,title:"Payment Methods",sub:"Cash"){}
+                PPRow(icon:"gift.fill",bg:.init(hex:"#9B59FF"),title:"Promo Codes",sub:"Redeem discount codes",badge:"NEW"){}
+                PPSection("SAFETY")
+                PPRow(icon:"shield.fill",bg:.eRed,title:"Safety Settings",sub:"Emergency contacts, panic button"){}
+                PPSection("PREFERENCES")
+                PPRow(icon:"questionmark.circle.fill",bg:.init(hex:"#444"),title:"Help & Support",sub:"FAQs, contact us"){}
+                PPRow(icon:"doc.text.fill",bg:.init(hex:"#333"),title:"Terms & Privacy",sub:"Read our policies"){}
+                Button{showSignOut=true}label:{HStack(spacing:12){ZStack{RoundedRectangle(cornerRadius:8).fill(Color.eRed.opacity(0.12)).frame(width:34,height:34);Image(systemName:"rectangle.portrait.and.arrow.right").font(.system(size:14)).foregroundColor(.eRed)};Text("Sign Out").font(EFont.body(14,weight:.semibold)).foregroundColor(.eRed);Spacer()}.padding(.horizontal,20).padding(.vertical,14).background(Color.eCard)}.padding(.top,8)
+                Text("eTaxi v1.0 · ZA Edition").font(EFont.body(11)).foregroundColor(.eTextMuted).frame(maxWidth:.infinity).padding(.vertical,20)
+                Spacer(minLength:100)
+            }}
         }
-    }
-    @ViewBuilder private func ppRow(icon: String, label: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) { HStack(spacing: 16) { Image(systemName: icon).font(.system(size: 18)).foregroundColor(.eTextSoft).frame(width: 24); Text(label).font(EFont.body(15)).foregroundColor(.eText); Spacer(); Image(systemName: "chevron.right").font(.system(size: 12)).foregroundColor(.eTextMuted) }.padding(.horizontal, 16).padding(.vertical, 16) }
+        .alert("Sign Out",isPresented:$showSignOut){Button("Sign Out",role:.destructive){authVM.logout()};Button("Cancel",role:.cancel){}}message:{Text("Are you sure you want to sign out?")}
     }
 }
+struct PStatCell: View {
+    let val:String;let label:String;let color:Color
+    var body: some View{VStack(spacing:4){Text(val).font(EFont.display(18,weight:.heavy)).foregroundColor(color);Text(label).font(EFont.body(11)).foregroundColor(.eTextMuted)}.frame(maxWidth:.infinity).padding(.vertical,18)}
+}
+struct PPSection: View {
+    let t:String; init(_ t:String){self.t=t}
+    var body: some View{Text(t).font(EFont.body(11,weight:.bold)).foregroundColor(.eTextMuted).kerning(0.8).frame(maxWidth:.infinity,alignment:.leading).padding(.horizontal,20).padding(.top,22).padding(.bottom,6)}
+}
+struct PPRow: View {
+    let icon:String;let bg:Color;let title:String;let sub:String;var badge:String?=nil;let action:()->Void
+    var body: some View{Button(action:action){HStack(spacing:14){ZStack{RoundedRectangle(cornerRadius:8).fill(bg.opacity(0.18)).frame(width:36,height:36);Image(systemName:icon).font(.system(size:15)).foregroundColor(bg)};VStack(alignment:.leading,spacing:2){HStack(spacing:6){Text(title).font(EFont.body(14,weight:.semibold)).foregroundColor(.eText);if let b=badge{Text(b).font(EFont.body(9,weight:.bold)).foregroundColor(.eGreen).padding(.horizontal,5).padding(.vertical,2).background(Color.eGreen.opacity(0.12)).clipShape(RoundedRectangle(cornerRadius:4))}};Text(sub).font(EFont.body(12)).foregroundColor(.eTextMuted).lineLimit(1)};Spacer();Image(systemName:"chevron.right").font(.system(size:12,weight:.semibold)).foregroundColor(.eTextMuted.opacity(0.5))}.padding(.horizontal,20).padding(.vertical,13).background(Color.eCard)}.overlay(alignment:.bottom){Rectangle().fill(Color.eBorder.opacity(0.5)).frame(height:0.5).padding(.leading,70)}}
+}
+
+
+// MARK: - Wallet (ZipRide WalletView)
+struct PWalletView: View {
+    @ObservedObject var vm: PassengerViewModel
+    @State private var method = "cash"
+    var body: some View {
+        ZStack{Color.eBackground.ignoresSafeArea()
+            ScrollView(showsIndicators:false){VStack(alignment:.leading,spacing:0){
+                Text("Wallet").font(EFont.display(26,weight:.heavy)).foregroundColor(.eText).kerning(-0.5).padding(.top,54).padding(.bottom,4)
+                Text("Choose your default payment method").font(EFont.body(13)).foregroundColor(.eTextMuted).padding(.bottom,28)
+                Text("PAYMENT METHOD").font(EFont.body(11,weight:.bold)).foregroundColor(.eTextMuted).kerning(0.8).padding(.bottom,12)
+                HStack(spacing:0){pwBtn("card","creditcard.fill","Card");pwBtn("cash","banknote.fill","Cash")}.padding(4).background(Color.eCard).overlay(RoundedRectangle(cornerRadius:13).stroke(Color.eBorder,lineWidth:1)).clipShape(RoundedRectangle(cornerRadius:13)).padding(.bottom,20)
+                if method=="cash" { pwInfo("banknote.fill",.eAccent,"Cash Payment","Pay your driver directly in cash at the end of the trip.",["No card required","Pay driver directly","Exact fare shown before you confirm"]) }
+                else { pwInfo("creditcard.fill",.eGreen,"Card Payment","Pay securely by card. Full card management coming soon.",["Secure online payment","No cash needed","Instant payment on trip completion"]) }
+                Spacer(minLength:120)
+            }.padding(.horizontal,20)}
+        }
+    }
+    @ViewBuilder private func pwBtn(_ m:String,_ icon:String,_ label:String)->some View{
+        let sel=method==m
+        Button{withAnimation(.spring(response:0.3)){method=m}}label:{HStack(spacing:8){Image(systemName:icon).font(.system(size:14));Text(label).font(EFont.body(14,weight:.bold))}.foregroundColor(sel ? .black:.eTextMuted).frame(maxWidth:.infinity).padding(.vertical,14).background(sel ? Color.eGreen:Color.clear).clipShape(RoundedRectangle(cornerRadius:11))}
+    }
+    @ViewBuilder private func pwInfo(_ icon:String,_ color:Color,_ title:String,_ desc:String,_ pts:[String])->some View{
+        VStack(alignment:.leading,spacing:14){HStack(spacing:14){ZStack{RoundedRectangle(cornerRadius:12).fill(color.opacity(0.15)).frame(width:52,height:52);Image(systemName:icon).font(.system(size:22)).foregroundColor(color)};VStack(alignment:.leading,spacing:4){Text(title).font(EFont.body(15,weight:.bold)).foregroundColor(.eText);Text(desc).font(EFont.body(13)).foregroundColor(.eTextMuted)}};Rectangle().fill(Color.eBorder).frame(height:1);VStack(alignment:.leading,spacing:10){ForEach(pts,id:\.self){pt in HStack(spacing:8){Image(systemName:"checkmark.circle.fill").font(.system(size:13)).foregroundColor(.eGreen);Text(pt).font(EFont.body(13)).foregroundColor(.eTextSoft)}}}}.padding(18).background(Color.eCard).overlay(RoundedRectangle(cornerRadius:16).stroke(Color.eBorder,lineWidth:1)).clipShape(RoundedRectangle(cornerRadius:16))
+    }
+}
+
+// MARK: - Service Choice
+struct PServiceChoiceView: View {
+    @ObservedObject var vm: PassengerViewModel
+    @State private var appeared = false
+    var body: some View {
+        ZStack{Color.eBackground.ignoresSafeArea()
+            VStack(spacing:0){Spacer()
+                ZStack{RoundedRectangle(cornerRadius:20).fill(Color.eGreen).frame(width:72,height:72).shadow(color:Color.eGreen.opacity(0.4),radius:20,y:6);Text("eT").font(.system(size:26,weight:.black,design:.rounded)).foregroundColor(.black)}.scaleEffect(appeared ? 1:0.7).opacity(appeared ? 1:0).padding(.bottom,24)
+                Text("How do you want\nto get around?").font(EFont.display(30,weight:.heavy)).foregroundColor(.eText).multilineTextAlignment(.center).opacity(appeared ? 1:0).padding(.bottom,8)
+                Text("Choose your default service. You can always switch later.").font(EFont.body(15)).foregroundColor(.eTextSoft).multilineTextAlignment(.center).padding(.horizontal,32).opacity(appeared ? 1:0).padding(.bottom,40)
+                psCard("⚡️",Color.eGreen.opacity(0.18),"Standard Ride","POPULAR",.eGreen,"On-demand metered trips",["Pay per km + time","Driver arrives in minutes","Economy · Comfort · XL · Ladies"],Color.eGreen.opacity(0.3)){vm.selectPreference("standard")}.padding(.bottom,16)
+                psCard("📅",Color(hex:"#3D2B8F").opacity(0.4),"Custom Hire","FLAT RATE",Color(hex:"#7B6FD8"),"Flat-rate hourly & daily packages",["Fixed price — no surprises","Hourly · Half day · Full day","Perfect for events & long trips"],Color(hex:"#3D2B8F").opacity(0.5)){vm.selectPreference("custom")}.padding(.bottom,32)
+                Button{vm.selectPreference("standard")}label:{Text("Skip — use Standard for now").font(EFont.body(14)).foregroundColor(.eTextMuted)}
+                Spacer()
+            }.padding(.horizontal,20)
+        }.onAppear{withAnimation(.spring(response:0.6,dampingFraction:0.8).delay(0.1)){appeared=true}}
+    }
+    @ViewBuilder private func psCard(_ emoji:String,_ emojiBg:Color,_ title:String,_ badge:String,_ badgeColor:Color,_ desc:String,_ bullets:[String],_ border:Color,_ action:@escaping()->Void)->some View{
+        Button(action:action){HStack(alignment:.top,spacing:16){ZStack{RoundedRectangle(cornerRadius:14).fill(emojiBg).frame(width:52,height:52);Text(emoji).font(.system(size:26))};VStack(alignment:.leading,spacing:6){HStack(spacing:8){Text(title).font(EFont.body(17,weight:.bold)).foregroundColor(.eText);Text(badge).font(EFont.body(10,weight:.bold)).foregroundColor(badgeColor).padding(.horizontal,8).padding(.vertical,3).background(badgeColor.opacity(0.15)).clipShape(Capsule())};Text(desc).font(EFont.body(13)).foregroundColor(.eTextSoft);ForEach(bullets,id:\.self){b in HStack(spacing:8){Circle().fill(badgeColor).frame(width:5,height:5);Text(b).font(EFont.body(12)).foregroundColor(.eTextSoft)}}};Spacer();Image(systemName:"arrow.right").font(.system(size:14,weight:.bold)).foregroundColor(.eText).frame(width:32,height:32).background(badgeColor).clipShape(Circle())}.padding(18).background(Color.eSurface).clipShape(RoundedRectangle(cornerRadius:20)).overlay(RoundedRectangle(cornerRadius:20).stroke(border,lineWidth:1.5))}
+    }
+}
+
+// MARK: - Custom Hire + Hire Confirmed
+struct PCustomHireView: View {
+    @ObservedObject var vm: PassengerViewModel
+    @State private var mapRegion = MKCoordinateRegion(center:.init(latitude:-26.1076,longitude:28.0567),span:.init(latitudeDelta:0.02,longitudeDelta:0.02))
+    @State private var showDatePicker=false
+    let dur=[(String,String,String)](arrayLiteral:("⏰","Hourly","hourly"),("🌤","Half Day","halfday"),("☀️","Full Day","fullday"),("🏖","Weekend","weekend"))
+    var body: some View {
+        ZStack{Map(coordinateRegion:$mapRegion,showsUserLocation:true).ignoresSafeArea()
+            VStack{HStack{Button{vm.screen = .home}label:{Image(systemName:"arrow.left").font(.system(size:16,weight:.semibold)).foregroundColor(.eText).frame(width:42,height:42).background(Color.eSurface.opacity(0.95)).clipShape(RoundedRectangle(cornerRadius:12))};VStack(alignment:.leading,spacing:2){Text("Custom Hire").font(EFont.display(18,weight:.heavy)).foregroundColor(.eText);Text("Flat-rate packages").font(EFont.body(12)).foregroundColor(.eTextSoft)}.padding(.leading,8);Spacer()}.padding(.horizontal,16).padding(.top,52);Spacer()}
+            VStack{Spacer()
+                VStack(spacing:0){ESheetHandle().padding(.top,12).padding(.bottom,16)
+                    ScrollView(showsIndicators:false){VStack(spacing:16){
+                        VStack(alignment:.leading,spacing:12){Label("Start Date & Time",systemImage:"calendar").font(EFont.body(14,weight:.semibold)).foregroundColor(.eTextSoft);HStack(spacing:12){Button{showDatePicker.toggle()}label:{Text(vm.hireDate.formatted(.dateTime.day().month(.abbreviated).year())).font(EFont.body(16,weight:.bold)).foregroundColor(.eText).padding(.horizontal,16).padding(.vertical,12).background(Color.eSurface2).clipShape(RoundedRectangle(cornerRadius:12))};Button{showDatePicker.toggle()}label:{Text(vm.hireDate.formatted(.dateTime.hour().minute())).font(EFont.body(16,weight:.bold)).foregroundColor(.eText).padding(.horizontal,16).padding(.vertical,12).background(Color.eSurface2).clipShape(RoundedRectangle(cornerRadius:12))}};if showDatePicker{DatePicker("",selection:$vm.hireDate,in:Date()...).datePickerStyle(.graphical).tint(.eGreen)}}.padding(16).background(Color.eSurface2).clipShape(RoundedRectangle(cornerRadius:16))
+                        VStack(alignment:.leading,spacing:12){Label("Duration",systemImage:"clock").font(EFont.body(14,weight:.semibold)).foregroundColor(.eTextSoft);HStack(spacing:10){ForEach(dur,id:\.1){e,l,k in let sel=vm.hireDuration==k;Button{withAnimation(.spring(response:0.3)){vm.hireDuration=k}}label:{VStack(spacing:6){Text(e).font(.system(size:24));Text(l).font(EFont.body(12,weight:sel ? .bold:.regular)).foregroundColor(sel ? .black:.eText)}.frame(maxWidth:.infinity).frame(height:72).background(sel ? Color(hex:"#6366F1"):Color.eSurface).clipShape(RoundedRectangle(cornerRadius:14)).overlay(RoundedRectangle(cornerRadius:14).stroke(sel ? Color.clear:Color.eBorder,lineWidth:1))}}}.padding(16).background(Color.eSurface2).clipShape(RoundedRectangle(cornerRadius:16))
+                        if let err=vm.errorMessage{EErrorBanner(message:err)};Spacer(minLength:80)
+                    }.padding(.horizontal,20)}
+                }.background(Color.eSurface).clipShape(RoundedRectangle(cornerRadius:28,style:.continuous)).frame(maxHeight:UIScreen.main.bounds.height*0.65)
+                Button{vm.confirmHire()}label:{Text(vm.hireEstimatedFare>0 ? "Confirm Hire · R\(Int(vm.hireEstimatedFare))":"Confirm Hire").font(EFont.body(16,weight:.bold)).foregroundColor(.black).frame(maxWidth:.infinity).frame(height:56).background(vm.isLoading ? Color.eSurface:Color(hex:"#6366F1")).clipShape(RoundedRectangle(cornerRadius:16))}.disabled(vm.isLoading).padding(.horizontal,20).padding(.vertical,12).background(Color.eSurface)
+            }
+            }
+        }.ignoresSafeArea().onAppear{if let c=LocationManager.shared.coordinate{mapRegion.center=c}}
+    }
+}
+struct PHireConfirmedView: View {
+    @ObservedObject var vm: PassengerViewModel
+    var body: some View {
+        ZStack{Color.eBackground.ignoresSafeArea();VStack(spacing:24){Spacer();HStack(spacing:10){Circle().fill(Color(hex:"#6366F1")).frame(width:10,height:10);Text("Hire Confirmed").font(EFont.body(16,weight:.bold)).foregroundColor(.eText)}.padding(.horizontal,20).padding(.vertical,12).background(Color(hex:"#1E1B3A")).clipShape(Capsule());Text(vm.hireDate.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated).hour().minute())).font(.system(size:28,weight:.black,design:.rounded)).foregroundColor(.eText).multilineTextAlignment(.center);Text(vm.pickupAddress).font(EFont.body(14)).foregroundColor(.eTextSoft).multilineTextAlignment(.center).padding(.horizontal,40);Text("R\(Int(vm.currentTrip?.totalFare ?? vm.hireEstimatedFare))").font(.system(size:52,weight:.black,design:.rounded)).foregroundColor(.eAccent);EPrimaryButton(title:"Done"){vm.goHome()}.padding(.horizontal,20);Spacer()}}
+    }
+}
+
+// EPrimaryButton defined in Core/Utils/DesignSystem.swift
+
+// Design tokens defined in DesignSystem.swift

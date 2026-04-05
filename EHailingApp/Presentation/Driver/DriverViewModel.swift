@@ -196,6 +196,11 @@ final class DriverViewModel: ObservableObject {
         }
     }
 
+    func triggerPanic(lat: Double, lon: Double) async {
+        print("[Driver] SOS triggered at \(lat), \(lon)")
+        // TODO: call backend panic endpoint
+    }
+
     func dismissTripComplete() {
         currentTrip = nil; screen = .home
     }
