@@ -398,13 +398,37 @@ struct DEnRouteView: View {
                     Text(vm.currentTrip?.fareStr ?? "R0").font(EFont.display(20, weight: .heavy)).foregroundColor(.eGreen)
                 }.padding(.bottom, 18)
 
-                // ETA card
-                HStack {
-                    VStack(alignment: .leading, spacing: 4) { Text("TO PICKUP").font(EFont.body(11, weight: .bold)).foregroundColor(.eTextSoft).kerning(0.5); Text(eta).font(EFont.display(26, weight: .heavy)).foregroundColor(.eGreen) }
-                    Spacer()
-                    VStack(alignment: .trailing, spacing: 4) { Text("DISTANCE").font(EFont.body(11, weight: .bold)).foregroundColor(.eTextSoft).kerning(0.5); Text(distanceText).font(EFont.display(18, weight: .bold)).foregroundColor(.eText) }
+                // ETA card with traffic awareness
+                HStack(spacing: 0) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("TO PICKUP").font(EFont.body(10, weight: .bold)).foregroundColor(.eTextSoft).kerning(0.5)
+                        Text(eta).font(EFont.display(28, weight: .heavy)).foregroundColor(.eGreen)
+                        if trafficLevel == .heavy || trafficLevel == .moderate {
+                            HStack(spacing: 4) {
+                                Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 9))
+                                    .foregroundColor(trafficLevel == .heavy ? .eRed : .eAccent)
+                                Text(trafficLevel == .heavy ? "Heavy traffic" : "Slow traffic")
+                                    .font(EFont.body(10, weight: .bold))
+                                    .foregroundColor(trafficLevel == .heavy ? .eRed : .eAccent)
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Rectangle().fill(Color.eBorder).frame(width: 1, height: 44)
+                    VStack(alignment: .trailing, spacing: 3) {
+                        Text("DISTANCE").font(EFont.body(10, weight: .bold)).foregroundColor(.eTextSoft).kerning(0.5)
+                        Text(distanceText).font(EFont.display(18, weight: .bold)).foregroundColor(.eText)
+                        if let fare = vm.currentTrip?.fareStr {
+                            Text(fare).font(EFont.body(12, weight: .semibold)).foregroundColor(.eGreen)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
                 }
-                .padding(16).background(Color.eSurface).overlay(RoundedRectangle(cornerRadius: 13).stroke(Color.eBorder, lineWidth: 1)).clipShape(RoundedRectangle(cornerRadius: 13)).padding(.bottom, 14)
+                .padding(16).background(Color.eSurface)
+                .overlay(RoundedRectangle(cornerRadius: 13).stroke(
+                    trafficLevel == .heavy ? Color.eRed.opacity(0.4) :
+                    trafficLevel == .moderate ? Color.eAccent.opacity(0.4) : Color.eBorder, lineWidth: 1.5))
+                .clipShape(RoundedRectangle(cornerRadius: 13)).padding(.bottom, 14)
 
                 // Pickup address
                 HStack(spacing: 12) {
@@ -623,17 +647,32 @@ struct DActiveTripView: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
                     // ETA + earning
-                    HStack {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("TO DROP-OFF").font(EFont.body(11, weight: .bold)).foregroundColor(.eTextSoft).kerning(0.5)
-                            Text(eta).font(EFont.display(22, weight: .heavy)).foregroundColor(.eText)
-                            Text(distanceText + " remaining").font(EFont.body(11)).foregroundColor(.eTextMuted)
+                    HStack(spacing: 0) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("TO DROP-OFF").font(EFont.body(10, weight: .bold)).foregroundColor(.eTextSoft).kerning(0.5)
+                            Text(eta).font(EFont.display(24, weight: .heavy)).foregroundColor(.eText)
+                            HStack(spacing: 6) {
+                                Text(distanceText).font(EFont.body(11)).foregroundColor(.eTextMuted)
+                                if trafficLevel == .heavy || trafficLevel == .moderate {
+                                    HStack(spacing: 3) {
+                                        Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 9))
+                                            .foregroundColor(trafficLevel == .heavy ? .eRed : .eAccent)
+                                        Text(trafficLevel == .heavy ? "Heavy" : "Slow").font(EFont.body(10, weight: .bold))
+                                            .foregroundColor(trafficLevel == .heavy ? .eRed : .eAccent)
+                                    }
+                                }
+                            }
                         }
-                        Spacer()
-                        VStack(alignment: .trailing) {
-                            Text("Earning").font(EFont.body(11)).foregroundColor(.eTextMuted)
-                            Text(vm.currentTrip?.fareStr ?? "R0").font(EFont.display(20, weight: .heavy)).foregroundColor(.eGreen)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        Rectangle().fill(Color.eBorder).frame(width: 1, height: 44)
+                        VStack(alignment: .trailing, spacing: 3) {
+                            Text("EARNING").font(EFont.body(10, weight: .bold)).foregroundColor(.eTextSoft).kerning(0.5)
+                            Text(vm.currentTrip?.fareStr ?? "R0").font(EFont.display(22, weight: .heavy)).foregroundColor(.eGreen)
+                            if let km = vm.currentTrip?.estimatedDistanceKm {
+                                Text(String(format: "%.1f km total", km)).font(EFont.body(11)).foregroundColor(.eTextMuted)
+                            }
                         }
+                        .frame(maxWidth: .infinity, alignment: .trailing)
                     }.padding(.bottom, 12)
 
                     // Passenger row
@@ -1206,46 +1245,177 @@ struct TripStop: Identifiable, Equatable {
     static func == (l: TripStop, r: TripStop) -> Bool { l.id == r.id }
 }
 
-// MARK: - ETaxiMap for passenger screens (simple version using DriverRouteMap)
+// MARK: - ETaxiMap (passenger screens — driver→pickup or driver→dropoff)
 struct ETaxiMap: UIViewRepresentable {
-    var origin: CLLocationCoordinate2D?; var target: CLLocationCoordinate2D?
-    var isPickup: Bool; var fitRoute: Bool
-    @Binding var eta: String; @Binding var distance: String; @Binding var traffic: TrafficLevel
+    var origin:   CLLocationCoordinate2D?   // driver's live position
+    var target:   CLLocationCoordinate2D?   // pickup or dropoff
+    var isPickup: Bool
+    var fitRoute: Bool
+    @Binding var eta:      String
+    @Binding var distance: String
+    @Binding var traffic:  TrafficLevel
 
     func makeUIView(context: Context) -> MKMapView {
-        let m = MKMapView(); m.delegate = context.coordinator; m.showsUserLocation = true
-        m.showsTraffic = true; m.showsCompass = false; m.userTrackingMode = .follow; return m
+        let map = MKMapView()
+        map.delegate = context.coordinator
+        map.showsUserLocation = false          // don't follow passenger GPS
+        map.showsTraffic      = true
+        map.showsCompass      = false
+        map.mapType           = .standard
+        map.pointOfInterestFilter = .includingAll
+        return map
     }
+
     func updateUIView(_ map: MKMapView, context: Context) {
         guard let target else { return }
         let co = context.coordinator
-        guard co.lastTarget.map({ CLLocation(latitude:$0.latitude,longitude:$0.longitude).distance(from:CLLocation(latitude:target.latitude,longitude:target.longitude)) > 5 }) ?? true else { return }
+
+        // Only re-route if driver moved >30m or target changed
+        let driverMoved  = origin.flatMap { n in co.lastOrigin.map {
+            CLLocation(latitude: n.latitude, longitude: n.longitude)
+                .distance(from: CLLocation(latitude: $0.latitude, longitude: $0.longitude)) > 30
+        }} ?? (origin != nil)
+        let targetChanged = co.lastTarget.map {
+            CLLocation(latitude: $0.latitude, longitude: $0.longitude)
+                .distance(from: CLLocation(latitude: target.latitude, longitude: target.longitude)) > 5
+        } ?? true
+
+        guard driverMoved || targetChanged else { return }
+        co.lastOrigin = origin
         co.lastTarget = target
-        map.removeOverlays(map.overlays); map.removeAnnotations(map.annotations.filter{!($0 is MKUserLocation)})
-        let req = MKDirections.Request(); req.transportType = .automobile; req.requestsAlternateRoutes = true
-        req.source = origin.map { MKMapItem(placemark: MKPlacemark(coordinate: $0)) } ?? .forCurrentLocation()
+
+        map.removeOverlays(map.overlays)
+        map.removeAnnotations(map.annotations.filter { !($0 is MKUserLocation) })
+
+        // Add driver pin
+        if let o = origin {
+            let pin = MKPointAnnotation()
+            pin.coordinate = o
+            pin.title = "Driver"
+            map.addAnnotation(pin)
+        }
+
+        // Add destination pin
+        let destPin = MKPointAnnotation()
+        destPin.coordinate = target
+        destPin.title = isPickup ? "Pickup" : "Drop-off"
+        map.addAnnotation(destPin)
+
+        // Request route with alternates
+        let req = MKDirections.Request()
+        req.transportType           = .automobile
+        req.requestsAlternateRoutes = true
+        req.departureDate           = Date()
         req.destination = MKMapItem(placemark: MKPlacemark(coordinate: target))
-        MKDirections(request: req).calculate { resp, _ in DispatchQueue.main.async {
-            guard let best = resp?.routes.min(by:{$0.expectedTravelTime < $1.expectedTravelTime}) else { return }
-            let ff = best.distance/13.9; let r = best.expectedTravelTime/max(ff,1)
-            let tl: TrafficLevel = r>2 ? .heavy : r>1.35 ? .moderate : .clear
-            let poly = TrafficPolyline(points:best.polyline.points(),count:best.polyline.pointCount,trafficLevel:tl,isAlternate:false)
-            map.addOverlay(poly,level:.aboveRoads)
-            let mins = Int(best.expectedTravelTime/60); self.eta = mins<=0 ? "< 1 min" : "\(mins) min"
-            let km = best.distance/1000; self.distance = km<1 ? "\(Int(best.distance)) m" : String(format:"%.1f km",km)
-            self.traffic = tl
-        }}
+        req.source      = origin.map { MKMapItem(placemark: MKPlacemark(coordinate: $0)) }
+                          ?? MKMapItem.forCurrentLocation()
+
+        MKDirections(request: req).calculate { [self] resp, _ in
+            DispatchQueue.main.async {
+                guard let routes = resp?.routes, !routes.isEmpty else {
+                    // Fallback: straight line
+                    if let o = self.origin {
+                        map.addOverlay(MKPolyline(coordinates: [o, target], count: 2), level: .aboveRoads)
+                    }
+                    return
+                }
+
+                let best    = routes.min(by: { $0.expectedTravelTime < $1.expectedTravelTime })!
+                let ff      = best.distance / 13.9  // ~50 km/h free flow
+                let ratio   = best.expectedTravelTime / max(ff, 1)
+                let tl: TrafficLevel = ratio > 2.0 ? .heavy : ratio > 1.35 ? .moderate : .clear
+
+                // Draw alternate routes (dimmed)
+                for route in routes where route !== best {
+                    let alt = TrafficPolyline(
+                        points: route.polyline.points(), count: route.polyline.pointCount,
+                        trafficLevel: .unknown, isAlternate: true)
+                    map.addOverlay(alt, level: .aboveRoads)
+                }
+
+                // Draw best route with traffic colour
+                let poly = TrafficPolyline(
+                    points: best.polyline.points(), count: best.polyline.pointCount,
+                    trafficLevel: tl, isAlternate: false)
+                map.addOverlay(poly, level: .aboveRoads)
+
+                // Fit both endpoints on screen
+                if self.fitRoute || true {
+                    var rect = best.polyline.boundingMapRect
+                    // Expand rect to ensure origin pin is visible too
+                    if let o = self.origin {
+                        let pt = MKMapPoint(o)
+                        let ptRect = MKMapRect(x: pt.x, y: pt.y, width: 0, height: 0)
+                        rect = rect.union(ptRect)
+                    }
+                    let padding = UIEdgeInsets(top: 80, left: 50, bottom: 360, right: 50)
+                    map.setVisibleMapRect(rect, edgePadding: padding, animated: true)
+                }
+
+                // ETA and distance
+                let mins = Int(best.expectedTravelTime / 60)
+                self.eta      = mins <= 0 ? "< 1 min" : "\(mins) min"
+                let km        = best.distance / 1000
+                self.distance = km < 1 ? "\(Int(best.distance)) m" : String(format: "%.1f km", km)
+                self.traffic  = tl
+            }
+        }
     }
-    func makeCoordinator() -> Co { Co() }
-    final class Co: NSObject, MKMapViewDelegate {
+
+    func makeCoordinator() -> ETaxiCoord { ETaxiCoord() }
+
+    final class ETaxiCoord: NSObject, MKMapViewDelegate {
+        var lastOrigin: CLLocationCoordinate2D?
         var lastTarget: CLLocationCoordinate2D?
-        func mapView(_ m: MKMapView, rendererFor o: MKOverlay) -> MKOverlayRenderer {
-            guard let p = o as? TrafficPolyline else { return MKOverlayRenderer(overlay:o) }
-            let r = MKPolylineRenderer(polyline:p); r.lineCap = .round; r.lineWidth = 5
-            switch p.trafficLevel { case .heavy: r.strokeColor=UIColor(red:0.98,green:0.27,blue:0.27,alpha:1); case .moderate: r.strokeColor=UIColor(red:1,green:0.75,blue:0,alpha:1); default: r.strokeColor=UIColor(red:0,green:0.898,blue:0.455,alpha:1) }; return r
+
+        func mapView(_ map: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
+            guard let poly = overlay as? TrafficPolyline else {
+                return MKOverlayRenderer(overlay: overlay)
+            }
+            let r = MKPolylineRenderer(polyline: poly)
+            r.lineCap  = .round
+            r.lineJoin = .round
+            if poly.isAlternate {
+                r.lineWidth   = 4
+                r.strokeColor = UIColor.systemGray.withAlphaComponent(0.35)
+                r.lineDashPattern = [8, 6]
+            } else {
+                r.lineWidth = 6
+                switch poly.trafficLevel {
+                case .clear:    r.strokeColor = UIColor(red: 0,    green: 0.898, blue: 0.455, alpha: 1)
+                case .moderate: r.strokeColor = UIColor(red: 1,    green: 0.75,  blue: 0,     alpha: 1)
+                case .heavy:    r.strokeColor = UIColor(red: 0.98, green: 0.27,  blue: 0.27,  alpha: 1)
+                case .unknown:  r.strokeColor = UIColor(red: 0,    green: 0.898, blue: 0.455, alpha: 0.5)
+                }
+            }
+            return r
+        }
+
+        func mapView(_ map: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
+            guard !(annotation is MKUserLocation) else { return nil }
+            let reuseId = "etaxi-pin"
+            let view = (map.dequeueReusableAnnotationView(withIdentifier: reuseId)
+                        ?? MKMarkerAnnotationView(annotation: annotation, reuseIdentifier: reuseId))
+            if let m = view as? MKMarkerAnnotationView {
+                m.annotation = annotation
+                let t = annotation.title ?? ""
+                if t == "Driver" {
+                    m.glyphText      = "🚗"
+                    m.markerTintColor = UIColor(red: 0, green: 0.898, blue: 0.455, alpha: 1)
+                } else if t == "Pickup" {
+                    m.glyphImage      = UIImage(systemName: "figure.wave")
+                    m.markerTintColor = UIColor(red: 0, green: 0.898, blue: 0.455, alpha: 1)
+                } else {
+                    m.glyphImage      = UIImage(systemName: "flag.checkered")
+                    m.markerTintColor = UIColor(red: 1, green: 0.6, blue: 0, alpha: 1)
+                }
+                m.canShowCallout = true
+            }
+            return view
         }
     }
 }
+
 
 // MARK: - Shared map helpers
 func openInMaps(coord: CLLocationCoordinate2D?, label: String) {

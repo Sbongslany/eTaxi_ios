@@ -559,11 +559,45 @@ struct PLiveDriverMatchedSheet: View {
                 }.padding(.bottom,18)
             } else { HStack(spacing:12){ProgressView().tint(.eGreen); Text("Connecting you with a driver…").font(EFont.body(14)).foregroundColor(.eTextSoft)}.padding(.bottom,18) }
             // ETA+fare
-            HStack {
-                VStack(alignment: .leading, spacing: 4) { Text("ARRIVING IN").font(EFont.body(11,weight:.semibold)).foregroundColor(.eTextSoft).kerning(0.5); Text(vm.mapEta).font(EFont.display(30,weight:.heavy)).foregroundColor(.eGreen) }
-                Spacer()
-                VStack(alignment: .trailing, spacing: 4) { Text("FARE").font(EFont.body(11,weight:.semibold)).foregroundColor(.eTextSoft).kerning(0.5); Text(vm.currentTrip?.fareStr ?? "R0").font(EFont.display(18,weight:.bold)).foregroundColor(.eText) }
-            }.padding(.horizontal,18).padding(.vertical,14).background(Color.eSurface).overlay(RoundedRectangle(cornerRadius:13).stroke(Color.eBorder,lineWidth:1)).clipShape(RoundedRectangle(cornerRadius:13)).padding(.bottom,14)
+            // ETA + distance + fare — with traffic indicator
+            VStack(spacing: 8) {
+                HStack(spacing: 0) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("ARRIVING IN").font(EFont.body(10, weight: .bold)).foregroundColor(.eTextSoft).kerning(0.5)
+                        Text(vm.mapEta).font(EFont.display(26, weight: .heavy)).foregroundColor(.eGreen)
+                        Text(vm.mapDist).font(EFont.body(11)).foregroundColor(.eTextMuted)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Rectangle().fill(Color.eBorder).frame(width: 1, height: 48)
+                    VStack(alignment: .trailing, spacing: 3) {
+                        Text("FARE").font(EFont.body(10, weight: .bold)).foregroundColor(.eTextSoft).kerning(0.5)
+                        Text(vm.currentTrip?.fareStr ?? "R0").font(EFont.display(22, weight: .heavy)).foregroundColor(.eText)
+                        if let km = vm.currentTrip?.estimatedDistanceKm {
+                            Text(String(format: "%.1f km", km)).font(EFont.body(11)).foregroundColor(.eTextMuted)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+                .padding(.horizontal, 18).padding(.vertical, 14).background(Color.eSurface)
+                .overlay(RoundedRectangle(cornerRadius: 13).stroke(
+                    vm.mapTraffic == .heavy ? Color.eRed.opacity(0.5) :
+                    vm.mapTraffic == .moderate ? Color.eAccent.opacity(0.5) : Color.eBorder, lineWidth: 1.5))
+                .clipShape(RoundedRectangle(cornerRadius: 13))
+
+                if vm.mapTraffic == .heavy || vm.mapTraffic == .moderate {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 11))
+                            .foregroundColor(vm.mapTraffic == .heavy ? .eRed : .eAccent)
+                        Text(vm.mapTraffic == .heavy ? "Heavy traffic on route" : "Slow traffic ahead")
+                            .font(EFont.body(12, weight: .semibold))
+                            .foregroundColor(vm.mapTraffic == .heavy ? .eRed : .eAccent)
+                        Spacer()
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 7)
+                    .background((vm.mapTraffic == .heavy ? Color.eRed : Color.eAccent).opacity(0.07))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+            }.padding(.bottom, 14)
             // Actions
             HStack(spacing: 10) { PDriverActionBtn(icon:"phone.fill",label:"Call"); PDriverActionBtn(icon:"message.fill",label:"Chat"); PDriverActionBtn(icon:"square.and.arrow.up",label:"Share",tint:.eGreen) }.padding(.bottom,14)
             if vm.currentTrip?.canCancel==true || vm.currentTrip?.status=="searching" {
@@ -656,11 +690,46 @@ struct PLiveInRideSheet: View {
                     Spacer()
                 }.padding(.bottom,12)
             }
-            HStack(spacing:12){
-                VStack(spacing:6){Circle().fill(Color.eGreen).frame(width:10,height:10);Rectangle().fill(Color.eBorder).frame(width:1,height:16);Circle().fill(Color.eAccent).frame(width:10,height:10)}
-                VStack(alignment:.leading,spacing:10){Text(vm.currentTrip?.pickupAddress ?? vm.pickupAddress).font(EFont.body(12)).foregroundColor(.eText).lineLimit(1);Text(vm.currentTrip?.dropoffAddress ?? vm.dropoffAddress).font(EFont.body(12)).foregroundColor(.eText).lineLimit(1)}
-                Spacer()
-            }.padding(12).background(Color.eSurface).overlay(RoundedRectangle(cornerRadius:13).stroke(Color.eBorder,lineWidth:1)).clipShape(RoundedRectangle(cornerRadius:13)).padding(.bottom,12)
+            // Route card with full addresses
+            VStack(spacing: 0) {
+                HStack(spacing: 12) {
+                    VStack(spacing: 0) {
+                        Circle().fill(Color.eGreen).frame(width: 10, height: 10)
+                        Rectangle().fill(Color.eBorder).frame(width: 1, height: 24)
+                        Circle().fill(Color.eAccent).frame(width: 10, height: 10)
+                    }
+                    VStack(alignment: .leading, spacing: 10) {
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("PICKUP").font(EFont.body(9, weight: .bold)).foregroundColor(.eTextMuted).kerning(0.5)
+                            Text(vm.currentTrip?.pickupAddress ?? vm.pickupAddress).font(EFont.body(13)).foregroundColor(.eText).lineLimit(2)
+                        }
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("DROP-OFF").font(EFont.body(9, weight: .bold)).foregroundColor(.eTextMuted).kerning(0.5)
+                            Text(vm.currentTrip?.dropoffAddress ?? vm.dropoffAddress).font(EFont.body(13)).foregroundColor(.eText).lineLimit(2)
+                        }
+                    }
+                    Spacer()
+                }
+                .padding(14)
+
+                if let km = vm.currentTrip?.estimatedDistanceKm {
+                    Divider().background(Color.eBorder)
+                    HStack(spacing: 16) {
+                        Label(String(format: "%.1f km", km), systemImage: "arrow.triangle.swap")
+                            .font(EFont.body(12)).foregroundColor(.eTextMuted)
+                        if let dur = vm.currentTrip?.estimatedDurationMin {
+                            Label(String(format: "%.0f min total", dur), systemImage: "clock")
+                                .font(EFont.body(12)).foregroundColor(.eTextMuted)
+                        }
+                        Spacer()
+                        Text(vm.currentTrip?.rideType.capitalized ?? "").font(EFont.body(11, weight: .semibold)).foregroundColor(.eTextMuted)
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                }
+            }
+            .background(Color.eSurface)
+            .overlay(RoundedRectangle(cornerRadius: 13).stroke(Color.eBorder, lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 13)).padding(.bottom, 12)
             HStack(spacing:10){
                 PInRideActionBtn(icon:"phone.fill",label:"Call",tint:.eGreen)
                 PInRideActionBtn(icon:"message.fill",label:"Chat",tint:Color(hex:"#4488FF"))
