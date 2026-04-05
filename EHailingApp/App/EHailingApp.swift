@@ -3,6 +3,8 @@ import SwiftUI
 @main
 struct EHailingApp: App {
     @StateObject private var authVM = AuthViewModel()
+    // Force LocationManager singleton onto main thread at app launch
+    private let _loc = LocationManager.shared
 
     var body: some Scene {
         WindowGroup {
@@ -13,21 +15,31 @@ struct EHailingApp: App {
     }
 }
 
-// MARK: - Root View
+// MARK: - Root View (wires auth screen → passenger/driver home)
 struct RootView: View {
     @EnvironmentObject var authVM: AuthViewModel
 
     var body: some View {
         Group {
             switch authVM.screen {
-            case .splash:           SplashView()
-            case .login:            LoginView()
-            case .register:         RegisterView()
-            case .otp:              OTPView()
-            case .vehicleInfo:      VehicleInfoView()
-            case .documents:        DocumentUploadView()
-            case .passengerHome:    Text("Passenger Home") // placeholder
-            case .driverHome:       Text("Driver Home")    // placeholder
+            case .splash:        SplashView()
+            case .login:         LoginView()
+            case .register:      RegisterView()
+            case .otp:           OTPView()
+            case .vehicleInfo:   VehicleInfoView()
+            case .documents:     DocumentUploadView()
+            case .passengerHome:
+                if let user = authVM.currentUser {
+                    PassengerRoot(user: user)
+                } else {
+                    LoginView()
+                }
+            case .driverHome:
+                if let user = authVM.currentUser {
+                    DriverRoot(user: user)
+                } else {
+                    LoginView()
+                }
             }
         }
         .animation(.easeInOut(duration: 0.3), value: authVM.screen)

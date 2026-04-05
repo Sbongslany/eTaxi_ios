@@ -89,16 +89,25 @@ struct DocumentUploadView: View {
 
                         // Submit notice or button
                         if authVM.allMandatoryUploaded {
-                            EPrimaryButton(title: "Submit for Review") {
+                            // Always allow driver to proceed to dashboard
+                            EPrimaryButton(title: authVM.currentUser?.status == "verified" || authVM.currentUser?.isFullyVerified == true ? "Go to Dashboard" : "Submit for Review") {
                                 authVM.proceedFromDocuments()
                             }
                             .padding(.top, 8)
                         } else {
-                            Text("Upload all \(totalDocs) documents to submit")
-                                .font(EFont.body(13))
+                            // Even if not all docs uploaded, verified drivers can proceed
+                            if authVM.currentUser?.status == "verified" || authVM.currentUser?.isFullyVerified == true {
+                                EPrimaryButton(title: "Go to Dashboard") {
+                                    authVM.proceedFromDocuments()
+                                }
+                                .padding(.top, 8)
+                            } else {
+                                Text("Upload all \(totalDocs) documents to submit")
+                                    .font(EFont.body(13))
                                 .foregroundColor(.eTextMuted)
                                 .frame(maxWidth: .infinity)
                                 .padding(.top, 12)
+                            }
                         }
                     }
                     .padding(.horizontal, 20)

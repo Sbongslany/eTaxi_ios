@@ -46,21 +46,33 @@ final class AuthViewModel: ObservableObject {
     // MARK: - Session Restore
     private func checkSession() {
         guard TokenStore.isLoggedIn else {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                self.screen = .login
-            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { self.screen = .login }
             return
         }
+        // Load cached user first for fast startup
         currentUser = LocalStorage.shared.loadUser()
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-            self.navigateAfterLogin()
+            // Re-fetch from server to get latest isFullyVerified / status
+            Task { await self.refreshAndNavigate() }
         }
+    }
+
+    private func refreshAndNavigate() async {
+        // Try to get fresh user data from server
+        if let fresh = try? await authRepo.getMe() {
+            currentUser = fresh
+            LocalStorage.shared.saveUser(fresh)
+        }
+        navigateAfterLogin()
     }
 
     private func navigateAfterLogin() {
         guard let user = currentUser else { screen = .login; return }
         if user.isDriver {
-            if user.isFullyVerified == true {
+            // Check BOTH isFullyVerified AND status — backend may set status="verified"
+            // without setting is_fully_verified, or vice versa
+            let isVerified = user.isFullyVerified == true || user.status == "verified" || user.status == "active"
+            if isVerified {
                 screen = .driverHome
             } else {
                 screen = .documents
@@ -86,7 +98,7 @@ final class AuthViewModel: ObservableObject {
         }
     }
 
-    // MARK: - Register (Step 1: user info)
+    // MARK: - Register
     func register(phone: String, password: String,
                   firstName: String, lastName: String, email: String?, role: String) async {
         isLoading = true; errorMessage = nil
@@ -99,24 +111,20 @@ final class AuthViewModel: ObservableObject {
                 email: email, role: role)
             pendingUserId = userId
             pendingRole   = role
-            if role == "driver" {
-                screen = .vehicleInfo
-            } else {
-                screen = .otp
-            }
+            screen = role == "driver" ? .vehicleInfo : .otp
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
-    // MARK: - Vehicle Info (Step 2 for drivers)
+    // MARK: - Vehicle Info
     func submitVehicleInfo(_ info: VehicleInfoEntity) {
         pendingVehicle = info
         screen = .otp
     }
 
     // MARK: - OTP Verify
-        func verifyOTP(code: String) async {
+    func verifyOTP(code: String) async {
         guard let uid = pendingUserId else { errorMessage = "Session error. Please start over."; return }
         isLoading = true; errorMessage = nil
         defer { isLoading = false }
@@ -130,15 +138,11 @@ final class AuthViewModel: ObservableObject {
         guard let uid = pendingUserId else { return }
         isLoading = true; errorMessage = nil
         defer { isLoading = false }
-        do {
-            try await authRepo.resendOTP(userId: uid)
-            errorMessage = nil
-        } catch {
-            errorMessage = error.localizedDescription
-        }
+        do { try await authRepo.resendOTP(userId: uid) }
+        catch { errorMessage = error.localizedDescription }
     }
 
-    // MARK: - Document Upload
+    // MARK: - Documents
     func uploadDocument(type: String, data: Data, fileName: String, mimeType: String) async {
         uploadingType = type; uploadError = nil
         defer { uploadingType = nil }
@@ -153,12 +157,13 @@ final class AuthViewModel: ObservableObject {
 
     func loadDocuments() async {
         do {
-            let resp = try await AuthAPI.shared.getDocuments()
+            let resp  = try await AuthAPI.shared.getDocuments()
             uploadedDocs  = resp.documents
             mandatoryDocs = resp.mandatoryDocs ?? []
         } catch {}
     }
 
+    // Called when driver taps "Submit for Review" or "Continue" on doc screen
     func proceedFromDocuments() {
         screen = .driverHome
     }
