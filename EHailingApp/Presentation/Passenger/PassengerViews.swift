@@ -252,7 +252,7 @@ struct PBookingView: View {
         }
         .ignoresSafeArea()
         .onAppear { isSearching = vm.dropoffAddress.isEmpty }
-        .onChange(of: vm.dropoffAddress) { if !$0.isEmpty { withAnimation { isSearching = false } } }
+        // Removed: was auto-dismissing search sheet before user could confirm
     }
 }
 
@@ -317,21 +317,42 @@ struct PSearchSheet: View {
                 // Pickup
                 HStack(spacing: 12) {
                     ZStack { Circle().fill(Color.eGreen).frame(width: 12, height: 12); if activeField == "pickup" { Circle().stroke(Color.eGreen, lineWidth: 2).frame(width: 20, height: 20) } }.frame(width: 20)
-                    TextField(locMgr.address.isEmpty ? "Current location" : locMgr.address, text: $pickupText)
+                    TextField(vm.pickupAddress.isEmpty ? "Current location" : vm.pickupAddress, text: $pickupText)
                         .font(EFont.body(14, weight: activeField == "pickup" ? .semibold : .regular))
                         .foregroundColor(activeField == "pickup" ? .eText : .eTextSoft).tint(.eGreen).focused($pFocus)
-                        .onChange(of: pFocus) { if $0 { activeField="pickup"; dFocus=false; if pickupText.isEmpty { pickupText=vm.pickupAddress } } }
-                        .onChange(of: pickupText) { if activeField=="pickup" { runSearch($0) } }
-                    if activeField=="pickup" && !pickupText.isEmpty { Button { pickupText=""; results=[] } label: { Image(systemName: "xmark.circle.fill").foregroundColor(.eTextMuted).font(.system(size: 16)) } }
+                        .onChange(of: pFocus) { focused in
+                            if focused {
+                                activeField = "pickup"; dFocus = false
+                                // Always sync with latest vm value when field gains focus
+                                pickupText = vm.pickupAddress
+                            }
+                        }
+                        .onChange(of: pickupText) { if activeField == "pickup" { runSearch($0) } }
+                    if activeField == "pickup" && !pickupText.isEmpty {
+                        Button {
+                            pickupText = ""; results = []
+                            vm.pickupAddress    = ""; vm.pickupCoord = nil
+                            vm.userHasSetPickup = false  // allow GPS again
+                        } label: {
+                            Image(systemName: "xmark.circle.fill").foregroundColor(.eTextMuted).font(.system(size: 16))
+                        }
+                    }
                 }.padding(.horizontal, 16).padding(.vertical, 13)
 
                 // Swap
                 HStack {
                     Rectangle().fill(Color.eBorder).frame(width: 1, height: 20).padding(.leading, 25); Spacer()
                     Button {
-                        let ta=vm.pickupAddress; let tc=vm.pickupCoord
-                        vm.pickupAddress=vm.dropoffAddress; vm.pickupCoord=vm.dropoffCoord
-                        vm.dropoffAddress=ta; vm.dropoffCoord=tc; pickupText=vm.pickupAddress; dropoffText=vm.dropoffAddress
+                        // Swap vm state
+                        let tmpAddr  = vm.pickupAddress;  let tmpCoord = vm.pickupCoord
+                        vm.pickupAddress  = vm.dropoffAddress; vm.pickupCoord  = vm.dropoffCoord
+                        vm.dropoffAddress = tmpAddr;           vm.dropoffCoord = tmpCoord
+                        // Sync local text fields immediately
+                        pickupText  = vm.pickupAddress
+                        dropoffText = vm.dropoffAddress
+                        results     = []
+                        // Refetch estimates with swapped coords
+                        Task { await vm.fetchEstimates() }
                     } label: { ZStack { Circle().fill(Color.eSurface).frame(width: 28, height: 28).overlay(Circle().stroke(Color.eBorder, lineWidth: 1)); Image(systemName: "arrow.up.arrow.down").font(.system(size: 11, weight: .bold)).foregroundColor(.eTextMuted) } }
                     .padding(.trailing, 16)
                 }
@@ -343,9 +364,22 @@ struct PSearchSheet: View {
                     TextField("Search destination…", text: $dropoffText)
                         .font(EFont.body(14, weight: activeField=="dropoff" ? .semibold : .regular))
                         .foregroundColor(activeField=="dropoff" ? .eText : .eTextSoft).tint(.eGreen).focused($dFocus)
-                        .onChange(of: dFocus) { if $0 { activeField="dropoff"; pFocus=false } }
-                        .onChange(of: dropoffText) { if activeField=="dropoff" { runSearch($0) } }
-                    if activeField=="dropoff" && !dropoffText.isEmpty { Button { dropoffText=""; results=[] } label: { Image(systemName: "xmark.circle.fill").foregroundColor(.eTextMuted).font(.system(size: 16)) } }
+                        .onChange(of: dFocus) { focused in
+                            if focused {
+                                activeField = "dropoff"; pFocus = false
+                                // Sync with latest vm value when field gains focus
+                                if dropoffText.isEmpty { dropoffText = vm.dropoffAddress }
+                            }
+                        }
+                        .onChange(of: dropoffText) { if activeField == "dropoff" { runSearch($0) } }
+                    if activeField == "dropoff" && !dropoffText.isEmpty {
+                        Button {
+                            dropoffText = ""; results = []
+                            vm.dropoffAddress = ""; vm.dropoffCoord = nil
+                        } label: {
+                            Image(systemName: "xmark.circle.fill").foregroundColor(.eTextMuted).font(.system(size: 16))
+                        }
+                    }
                 }.padding(.horizontal, 16).padding(.vertical, 13)
             }
             .background(Color.eSurface)
@@ -367,12 +401,44 @@ struct PSearchSheet: View {
                     } else { quickPicks }
                 }
             }
-            Spacer(minLength: 20)
+            // Confirm button — only shown when both fields are set
+            if !vm.dropoffAddress.isEmpty && !vm.pickupAddress.isEmpty {
+                VStack(spacing: 8) {
+                    Divider().background(Color.eBorder)
+                    Button {
+                        isSearching = false
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "checkmark.circle.fill").font(.system(size: 16))
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Confirm destination").font(EFont.body(15, weight: .bold))
+                                Text(vm.dropoffAddress).font(EFont.body(11)).lineLimit(1)
+                            }
+                            Spacer()
+                            Image(systemName: "arrow.right").font(.system(size: 13, weight: .semibold))
+                        }
+                        .foregroundColor(.black)
+                        .padding(.horizontal, 16).padding(.vertical, 14)
+                        .background(Color.eGreen)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                    }
+                    .padding(.horizontal, 16).padding(.bottom, 12)
+                }
+            } else {
+                Spacer(minLength: 20)
+            }
         }
         .background(Color.eCard).clipShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
         .overlay(alignment: .top) { RoundedRectangle(cornerRadius: 28, style: .continuous).stroke(Color.eBorder, lineWidth: 1) }
         .frame(maxHeight: UIScreen.main.bounds.height * 0.78)
-        .onAppear { pickupText = vm.pickupAddress; dropoffText = vm.dropoffAddress; DispatchQueue.main.asyncAfter(deadline: .now()+0.35) { dFocus = true } }
+        .onAppear {
+            // Sync once on appear only — do NOT keep syncing (would override user edits)
+            pickupText  = vm.pickupAddress
+            dropoffText = vm.dropoffAddress
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                if vm.dropoffAddress.isEmpty { dFocus = true }
+            }
+        }
     }
 
     @ViewBuilder private var quickPicks: some View {
@@ -394,18 +460,62 @@ struct PSearchSheet: View {
     }
 
     private func selectItem(_ item: MKMapItem) {
-        let coord = item.placemark.coordinate; let name = item.name ?? item.placemark.title ?? "Location"
-        if activeField == "pickup" { vm.pickupAddress=name; vm.pickupCoord=coord; pickupText=name; results=[]; activeField="dropoff"; pFocus=false; dFocus=true }
-        else { vm.setDestination(name, coord: coord); results=[]; ensurePickup(); if !vm.pickupAddress.isEmpty { isSearching=false; Task { await vm.fetchEstimates() } } }
+        let coord = item.placemark.coordinate
+        let name  = item.name ?? item.placemark.title ?? "Location"
+        let field = activeField  // capture before any async
+
+        if field == "pickup" {
+            // User selected a new pickup location — lock out GPS overwrite
+            vm.pickupAddress    = name
+            vm.pickupCoord      = coord
+            vm.userHasSetPickup = true
+            pickupText          = name
+            results             = []
+            // Move focus to dropoff — stay in search sheet
+            activeField = "dropoff"; pFocus = false; dFocus = true
+        } else {
+            // User selected destination
+            vm.dropoffAddress = name
+            vm.dropoffCoord   = coord
+            dropoffText       = name
+            results           = []
+            // Only use GPS for pickup if user hasn't manually set one
+            if vm.pickupCoord == nil, let gps = locMgr.coordinate {
+                vm.pickupCoord   = gps
+                vm.pickupAddress = locMgr.address
+                pickupText       = locMgr.address
+            }
+            Task { await vm.fetchEstimates() }
+        }
     }
     private func selectPlace(emoji: String, label: String, address: String) {
-        if activeField=="pickup" && label=="Current Location" {
-            if let c = locMgr.coordinate { vm.pickupCoord=c; vm.pickupAddress=locMgr.address; pickupText=locMgr.address }
-            if !vm.dropoffAddress.isEmpty { isSearching=false } else { activeField="dropoff"; dFocus=true }
+        // Capture activeField NOW (before async geocode)
+        let fieldAtCallTime = activeField
+
+        if fieldAtCallTime == "pickup" && label == "Current Location" {
+            if let c = locMgr.coordinate {
+                vm.pickupCoord = c; vm.pickupAddress = locMgr.address; pickupText = locMgr.address
+            }
+            activeField = "dropoff"; pFocus = false; dFocus = true
         } else {
-            geocode(address) { c in guard let c else { return }
-                if activeField=="pickup" { vm.pickupAddress=label; vm.pickupCoord=c; pickupText=label; results=[]; activeField="dropoff"; pFocus=false; dFocus=true }
-                else { vm.setDestination(label, coord: c); results=[]; ensurePickup(); isSearching=false; Task { await vm.fetchEstimates() } }
+            geocode(address) { c in
+                guard let c else { return }
+                if fieldAtCallTime == "pickup" {
+                    vm.pickupAddress    = label
+                    vm.pickupCoord      = c
+                    vm.userHasSetPickup = true
+                    pickupText = label; results = []
+                    activeField = "dropoff"; pFocus = false; dFocus = true
+                } else {
+                    vm.dropoffAddress = label; vm.dropoffCoord = c
+                    dropoffText = label; results = []
+                    if vm.pickupCoord == nil, let gps = locMgr.coordinate {
+                        vm.pickupCoord = gps
+                        vm.pickupAddress = locMgr.address
+                        pickupText = locMgr.address
+                    }
+                    Task { await vm.fetchEstimates() }
+                }
             }
         }
     }

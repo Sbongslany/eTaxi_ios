@@ -20,6 +20,7 @@ final class PassengerViewModel: ObservableObject {
     @Published var screen:       PScreen = .serviceChoice
     @Published var selectedTab:  Int = 0
     let user: UserEntity
+    var userHasSetPickup: Bool = false  // prevents GPS from overwriting manual pickup
 
     // Location
     @Published var pickupCoord:    CLLocationCoordinate2D?
@@ -78,12 +79,17 @@ final class PassengerViewModel: ObservableObject {
         let loc = LocationManager.shared
         loc.$coordinate.sink { [weak self] c in
             guard let self, let c else { return }
-            // Always keep pickupCoord current unless passenger has manually changed it
-            self.pickupCoord = c
+            // Only auto-set pickup coord if user hasn't manually chosen a pickup
+            if !self.userHasSetPickup {
+                self.pickupCoord = c
+            }
         }.store(in: &locSubs)
         loc.$address.sink { [weak self] a in
             guard let self, !a.isEmpty, a != "Getting location..." else { return }
-            self.pickupAddress = a
+            // Only auto-set pickup address if user hasn't manually chosen a pickup
+            if !self.userHasSetPickup {
+                self.pickupAddress = a
+            }
         }.store(in: &locSubs)
     }
 
@@ -273,6 +279,7 @@ final class PassengerViewModel: ObservableObject {
 
     // MARK: Go home
     func goHome() {
+        userHasSetPickup = false  // allow GPS to resume
         stopPoll(); stopTimer()
         currentTrip = nil; driverCoord = nil
         dropoffCoord = nil; dropoffAddress = ""; estimates = [:]

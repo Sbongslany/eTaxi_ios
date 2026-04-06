@@ -76,6 +76,19 @@ final class DriverViewModel: ObservableObject {
                 self.pendingRequest = req
                 withAnimation(.spring(response: 0.4)) { self.hasPending = true }
             case .tripStatusChanged(let tid, let st):
+                // If this trip is the PENDING request and it got cancelled → dismiss overlay
+                if self.pendingRequest?.tripId == tid {
+                    let wasCancelled = st.contains("cancelled") || st == "no_driver_found"
+                    if wasCancelled {
+                        withAnimation(.spring(response: 0.4)) {
+                            self.hasPending = false; self.pendingRequest = nil
+                        }
+                        return  // Nothing more to do — trip is gone
+                    }
+                    // Don't handle "accepted" here — acceptTrip() handles it
+                    // Avoids race where WS clears overlay before acceptTrip Task finishes
+                }
+                // Update already-accepted active trip
                 guard self.currentTrip?.id == tid else { return }
                 self.currentTrip?.status = st
                 self.driverRoute(to: st)
@@ -86,13 +99,21 @@ final class DriverViewModel: ObservableObject {
 
     private func driverRoute(to status: String) {
         switch status {
-        case "accepted":          screen = .enRoute
-        case "driver_en_route":   screen = .enRoute
-        case "driver_arrived":    screen = .arrived
-        case "in_progress":       screen = .activeTrip
-        case "completed":         screen = .tripComplete; DTrip.clear(); stopPoll()
+        case "accepted", "driver_en_route":
+            if screen != .enRoute { screen = .enRoute }
+        case "driver_arrived":
+            if screen != .arrived { screen = .arrived }
+        case "in_progress":
+            if screen != .activeTrip { screen = .activeTrip }
+        case "completed":
+            DTrip.clear(); stopPoll(); currentTrip = nil; screen = .tripComplete
         default:
-            if status.contains("cancelled") { currentTrip = nil; DTrip.clear(); stopPoll(); screen = .home }
+            if status.contains("cancelled") || status == "no_driver_found" {
+                currentTrip = nil; DTrip.clear(); stopPoll()
+                withAnimation(.spring(response: 0.4)) {
+                    hasPending = false; pendingRequest = nil; screen = .home
+                }
+            }
         }
     }
 
@@ -161,7 +182,18 @@ final class DriverViewModel: ObservableObject {
                 currentTrip = trip; DTrip.id = trip.id
                 withAnimation { hasPending = false; pendingRequest = nil }
                 screen = .enRoute; startPoll(id: trip.id)
-            } catch { errorMessage = error.localizedDescription }
+            } catch {
+                // Trip was cancelled before we could accept — clear overlay gracefully
+                print("[Driver] acceptTrip failed (likely cancelled): \(error.localizedDescription)")
+                withAnimation(.spring(response: 0.4)) {
+                    hasPending = false; pendingRequest = nil
+                }
+                // Don't show error message for cancelled trips — just silently return to home
+                let msg = error.localizedDescription.lowercased()
+                if !msg.contains("cancel") && !msg.contains("not found") && !msg.contains("404") {
+                    errorMessage = error.localizedDescription
+                }
+            }
         }
     }
 
@@ -222,9 +254,30 @@ final class DriverViewModel: ObservableObject {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
                 guard let self else { return }
-                guard let trip = try? await TripService.shared.getTrip(id) else { continue }
-                await MainActor.run { self.currentTrip = trip; self.driverRoute(to: trip.status) }
-                if ["completed","cancelled_passenger","cancelled_driver","cancelled_system"].contains(trip.status) { return }
+                do {
+                    let trip = try await TripService.shared.getTrip(id)
+                    await MainActor.run {
+                        self.currentTrip = trip
+                        self.driverRoute(to: trip.status)
+                    }
+                    let terminal = ["completed","cancelled_passenger","cancelled_driver",
+                                    "cancelled_system","no_driver_found"]
+                    if terminal.contains(trip.status) { return }
+                } catch {
+                    // Trip fetch failed — if driver is on a trip screen, return home safely
+                    await MainActor.run {
+                        if self.screen != .home {
+                            let statusCode = (error as NSError).code
+                            if statusCode == 404 {
+                                // Trip not found — cancelled
+                                self.currentTrip = nil; DTrip.clear()
+                                withAnimation { self.screen = .home }
+                                print("[Driver] Trip not found (404) — returning home")
+                            }
+                        }
+                    }
+                    // Continue polling for non-fatal errors
+                }
             }
         }
     }

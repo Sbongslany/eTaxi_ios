@@ -1149,15 +1149,23 @@ struct DriverRouteMap: UIViewRepresentable {
     func updateUIView(_ map: MKMapView, context: Context) {
         guard let target = targetCoord else { return }
         let co = context.coordinator
-        let targetChanged  = co.lastTarget.map { dist($0, target) > 5 } ?? true
-        let driverMoved    = driverCoord.flatMap { n in co.lastDriverCoord.map { dist($0, n) > 50 } } ?? (driverCoord != nil)
-        let wpChanged      = co.lastWpCount != waypoints.count
-        if isNavigating && map.userTrackingMode != .followWithHeading { map.userTrackingMode = .followWithHeading }
-        if targetChanged || driverMoved || wpChanged {
-            co.lastTarget = target; co.lastDriverCoord = driverCoord; co.lastWpCount = waypoints.count
-            co.onTrafficAlert = onTrafficAlert; co.onRouteUpdated = onRouteUpdated
-            co.fetchRoute(on: map, from: driverCoord, waypoints: waypoints, to: target, isPickup: targetIsPickup, fitRoute: !isNavigating, etaB: $eta, distB: $distanceText, instrB: $nextInstruction, trafficB: $trafficLevel)
+
+        // Ensure navigation tracking when driving
+        if isNavigating && map.userTrackingMode != .followWithHeading {
+            map.userTrackingMode = .followWithHeading
         }
+
+        let isFirstLoad    = co.lastTarget == nil
+        let targetChanged  = co.lastTarget.map { dist($0, target) > 5 } ?? true
+        let driverMoved    = driverCoord.flatMap { n in co.lastDriverCoord.map { dist($0, n) > 30 } } ?? (driverCoord != nil)
+        let wpChanged      = co.lastWpCount != waypoints.count
+
+        guard isFirstLoad || targetChanged || driverMoved || wpChanged else { return }
+        co.lastTarget = target; co.lastDriverCoord = driverCoord; co.lastWpCount = waypoints.count
+        co.onTrafficAlert = onTrafficAlert; co.onRouteUpdated = onRouteUpdated
+        co.fetchRoute(on: map, from: driverCoord, waypoints: waypoints, to: target,
+                      isPickup: targetIsPickup, fitRoute: !isNavigating,
+                      etaB: $eta, distB: $distanceText, instrB: $nextInstruction, trafficB: $trafficLevel)
     }
     func makeCoordinator() -> Coord { Coord() }
     private func dist(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D) -> Double {
@@ -1170,10 +1178,8 @@ struct DriverRouteMap: UIViewRepresentable {
         private var isRouting = false; private var lastAlertDate: Date?; private var lastReportedTraffic: TrafficLevel = .unknown
 
         func fetchRoute(on map: MKMapView, from origin: CLLocationCoordinate2D?, waypoints: [TripStop], to dest: CLLocationCoordinate2D, isPickup: Bool, fitRoute: Bool, etaB: Binding<String>, distB: Binding<String>, instrB: Binding<String>, trafficB: Binding<TrafficLevel>) {
-            guard !isRouting else { return }; isRouting = true
-            map.removeOverlays(map.overlays); map.removeAnnotations(map.annotations.filter { !($0 is MKUserLocation) })
-            for stop in waypoints { let p = MKPointAnnotation(); p.coordinate = stop.coordinate; p.title = stop.name; map.addAnnotation(p) }
-            let destPin = MKPointAnnotation(); destPin.coordinate = dest; destPin.title = isPickup ? "Pickup" : "Drop-off"; map.addAnnotation(destPin)
+            // Cancel in-flight request and start fresh
+            isRouting = true
             let req = MKDirections.Request(); req.transportType = .automobile; req.requestsAlternateRoutes = true; req.departureDate = Date()
             req.source = origin.map { MKMapItem(placemark: MKPlacemark(coordinate: $0)) } ?? .forCurrentLocation()
             req.destination = MKMapItem(placemark: MKPlacemark(coordinate: dest))
@@ -1189,6 +1195,14 @@ struct DriverRouteMap: UIViewRepresentable {
                     let savedMins = Int((worst.expectedTravelTime - best.expectedTravelTime) / 60)
                     for route in routes where route !== best {
                         let alt = TrafficPolyline(points: route.polyline.points(), count: route.polyline.pointCount, trafficLevel: .unknown, isAlternate: true); map.addOverlay(alt, level: .aboveRoads)
+                    }
+                    // Remove old overlays only when we have new ones ready (prevents blank flash)
+                    map.removeOverlays(map.overlays)
+                    map.removeAnnotations(map.annotations.filter { !($0 is MKUserLocation) })
+                    for stop in waypoints { let p = MKPointAnnotation(); p.coordinate = stop.coordinate; p.title = stop.name; map.addAnnotation(p) }
+                    let destPin = MKPointAnnotation(); destPin.coordinate = dest; destPin.title = isPickup ? "Pickup" : "Drop-off"; map.addAnnotation(destPin)
+                    for route in routes where route !== best {
+                        let alt2 = TrafficPolyline(points: route.polyline.points(), count: route.polyline.pointCount, trafficLevel: .unknown, isAlternate: true); map.addOverlay(alt2, level: .aboveRoads)
                     }
                     let bestLine = TrafficPolyline(points: best.polyline.points(), count: best.polyline.pointCount, trafficLevel: traffic, isAlternate: false); map.addOverlay(bestLine, level: .aboveRoads)
                     if fitRoute { map.setVisibleMapRect(best.polyline.boundingMapRect, edgePadding: UIEdgeInsets(top:80,left:40,bottom:340,right:40), animated: true) }
@@ -1245,9 +1259,9 @@ struct TripStop: Identifiable, Equatable {
     static func == (l: TripStop, r: TripStop) -> Bool { l.id == r.id }
 }
 
-// MARK: - ETaxiMap (passenger screens — driver→pickup or driver→dropoff)
+// MARK: - ETaxiMap (passenger — shows route from driver → pickup/dropoff)
 struct ETaxiMap: UIViewRepresentable {
-    var origin:   CLLocationCoordinate2D?   // driver's live position
+    var origin:   CLLocationCoordinate2D?   // driver's live GPS
     var target:   CLLocationCoordinate2D?   // pickup or dropoff
     var isPickup: Bool
     var fitRoute: Bool
@@ -1257,162 +1271,201 @@ struct ETaxiMap: UIViewRepresentable {
 
     func makeUIView(context: Context) -> MKMapView {
         let map = MKMapView()
-        map.delegate = context.coordinator
-        map.showsUserLocation = false          // don't follow passenger GPS
-        map.showsTraffic      = true
-        map.showsCompass      = false
-        map.mapType           = .standard
+        map.delegate              = context.coordinator
+        map.showsUserLocation     = false   // don't follow passenger device GPS
+        map.showsTraffic          = true
+        map.showsCompass          = false
+        map.mapType               = .standard
         map.pointOfInterestFilter = .includingAll
+        // Store initial bindings in coordinator
+        context.coordinator.etaBinding      = $eta
+        context.coordinator.distanceBinding = $distance
+        context.coordinator.trafficBinding  = $traffic
         return map
     }
 
     func updateUIView(_ map: MKMapView, context: Context) {
         guard let target else { return }
         let co = context.coordinator
+        // Always keep bindings current
+        co.etaBinding      = $eta
+        co.distanceBinding = $distance
+        co.trafficBinding  = $traffic
 
-        // Only re-route if driver moved >30m or target changed
-        let driverMoved  = origin.flatMap { n in co.lastOrigin.map {
-            CLLocation(latitude: n.latitude, longitude: n.longitude)
-                .distance(from: CLLocation(latitude: $0.latitude, longitude: $0.longitude)) > 30
-        }} ?? (origin != nil)
-        let targetChanged = co.lastTarget.map {
-            CLLocation(latitude: $0.latitude, longitude: $0.longitude)
-                .distance(from: CLLocation(latitude: target.latitude, longitude: target.longitude)) > 5
-        } ?? true
+        let isFirstLoad   = co.lastTarget == nil
+        let targetChanged = co.lastTarget.map { hasMoved($0, target, by: 5) } ?? true
+        let driverMoved   = origin.flatMap { n in co.lastOrigin.map { hasMoved($0, n, by: 25) } } ?? (origin != nil)
 
-        guard driverMoved || targetChanged else { return }
+        // Update driver pin position without remove/add (smooth movement)
+        if let origin {
+            if let existing = co.driverAnnotation {
+                UIView.animate(withDuration: 0.4) { existing.coordinate = origin }
+            } else {
+                let pin = ETaxiDriverPin()
+                pin.coordinate = origin
+                pin.title      = "Driver"
+                co.driverAnnotation = pin
+                map.addAnnotation(pin)
+            }
+        }
+
+        guard isFirstLoad || targetChanged || driverMoved else { return }
         co.lastOrigin = origin
         co.lastTarget = target
 
+        // Remove old route overlays but keep annotations
         map.removeOverlays(map.overlays)
-        map.removeAnnotations(map.annotations.filter { !($0 is MKUserLocation) })
 
-        // Add driver pin
-        if let o = origin {
+        // Ensure destination pin exists
+        if co.destAnnotation == nil || targetChanged {
+            if let old = co.destAnnotation { map.removeAnnotation(old) }
             let pin = MKPointAnnotation()
-            pin.coordinate = o
-            pin.title = "Driver"
+            pin.coordinate = target
+            pin.title      = isPickup ? "Pickup" : "Drop-off"
+            co.destAnnotation = pin
             map.addAnnotation(pin)
         }
 
-        // Add destination pin
-        let destPin = MKPointAnnotation()
-        destPin.coordinate = target
-        destPin.title = isPickup ? "Pickup" : "Drop-off"
-        map.addAnnotation(destPin)
-
-        // Request route with alternates
+        // Request route
         let req = MKDirections.Request()
         req.transportType           = .automobile
         req.requestsAlternateRoutes = true
         req.departureDate           = Date()
         req.destination = MKMapItem(placemark: MKPlacemark(coordinate: target))
         req.source      = origin.map { MKMapItem(placemark: MKPlacemark(coordinate: $0)) }
-                          ?? MKMapItem.forCurrentLocation()
+                          ?? .forCurrentLocation()
 
-        MKDirections(request: req).calculate { [self] resp, _ in
+        MKDirections(request: req).calculate { [weak co] resp, error in
+            guard let co else { return }
             DispatchQueue.main.async {
                 guard let routes = resp?.routes, !routes.isEmpty else {
-                    // Fallback: straight line
-                    if let o = self.origin {
+                    // Fallback straight line
+                    if let o = co.lastOrigin {
                         map.addOverlay(MKPolyline(coordinates: [o, target], count: 2), level: .aboveRoads)
                     }
                     return
                 }
-
-                let best    = routes.min(by: { $0.expectedTravelTime < $1.expectedTravelTime })!
-                let ff      = best.distance / 13.9  // ~50 km/h free flow
-                let ratio   = best.expectedTravelTime / max(ff, 1)
+                let best  = routes.min(by: { $0.expectedTravelTime < $1.expectedTravelTime })!
+                let ff    = best.distance / 13.9
+                let ratio = best.expectedTravelTime / max(ff, 1)
                 let tl: TrafficLevel = ratio > 2.0 ? .heavy : ratio > 1.35 ? .moderate : .clear
 
-                // Draw alternate routes (dimmed)
-                for route in routes where route !== best {
-                    let alt = TrafficPolyline(
-                        points: route.polyline.points(), count: route.polyline.pointCount,
-                        trafficLevel: .unknown, isAlternate: true)
+                // Draw alternate routes (dimmed dashes)
+                for r in routes where r !== best {
+                    let alt = TrafficPolyline(points: r.polyline.points(), count: r.polyline.pointCount,
+                                              trafficLevel: .unknown, isAlternate: true)
                     map.addOverlay(alt, level: .aboveRoads)
                 }
+                // Draw best route (colour-coded by traffic)
+                let bestLine = TrafficPolyline(points: best.polyline.points(), count: best.polyline.pointCount,
+                                               trafficLevel: tl, isAlternate: false)
+                map.addOverlay(bestLine, level: .aboveRoads)
 
-                // Draw best route with traffic colour
-                let poly = TrafficPolyline(
-                    points: best.polyline.points(), count: best.polyline.pointCount,
-                    trafficLevel: tl, isAlternate: false)
-                map.addOverlay(poly, level: .aboveRoads)
-
-                // Fit both endpoints on screen
-                if self.fitRoute || true {
-                    var rect = best.polyline.boundingMapRect
-                    // Expand rect to ensure origin pin is visible too
-                    if let o = self.origin {
-                        let pt = MKMapPoint(o)
-                        let ptRect = MKMapRect(x: pt.x, y: pt.y, width: 0, height: 0)
-                        rect = rect.union(ptRect)
-                    }
-                    let padding = UIEdgeInsets(top: 80, left: 50, bottom: 360, right: 50)
-                    map.setVisibleMapRect(rect, edgePadding: padding, animated: true)
+                // Zoom to show entire route + driver origin
+                var rect = best.polyline.boundingMapRect
+                if let o = co.lastOrigin {
+                    let pt = MKMapPoint(o)
+                    rect = rect.union(MKMapRect(x: pt.x - 100, y: pt.y - 100, width: 200, height: 200))
                 }
+                let padding = UIEdgeInsets(top: 100, left: 50, bottom: 380, right: 50)
+                map.setVisibleMapRect(rect, edgePadding: padding, animated: true)
 
-                // ETA and distance
+                // Update bindings via coordinator (struct self capture would be stale)
                 let mins = Int(best.expectedTravelTime / 60)
-                self.eta      = mins <= 0 ? "< 1 min" : "\(mins) min"
-                let km        = best.distance / 1000
-                self.distance = km < 1 ? "\(Int(best.distance)) m" : String(format: "%.1f km", km)
-                self.traffic  = tl
+                co.etaBinding?.wrappedValue      = mins <= 0 ? "< 1 min" : "\(mins) min"
+                let km = best.distance / 1000
+                co.distanceBinding?.wrappedValue = km < 1 ? "\(Int(best.distance)) m" : String(format: "%.1f km", km)
+                co.trafficBinding?.wrappedValue  = tl
             }
         }
+    }
+
+    private func hasMoved(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D, by meters: Double) -> Bool {
+        CLLocation(latitude: a.latitude, longitude: a.longitude)
+            .distance(from: CLLocation(latitude: b.latitude, longitude: b.longitude)) > meters
     }
 
     func makeCoordinator() -> ETaxiCoord { ETaxiCoord() }
 
     final class ETaxiCoord: NSObject, MKMapViewDelegate {
-        var lastOrigin: CLLocationCoordinate2D?
-        var lastTarget: CLLocationCoordinate2D?
+        var lastOrigin:  CLLocationCoordinate2D?
+        var lastTarget:  CLLocationCoordinate2D?
+        var driverAnnotation: ETaxiDriverPin?
+        var destAnnotation:   MKPointAnnotation?
+        var etaBinding:      Binding<String>?
+        var distanceBinding: Binding<String>?
+        var trafficBinding:  Binding<TrafficLevel>?
 
         func mapView(_ map: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
-            guard let poly = overlay as? TrafficPolyline else {
-                return MKOverlayRenderer(overlay: overlay)
-            }
-            let r = MKPolylineRenderer(polyline: poly)
-            r.lineCap  = .round
-            r.lineJoin = .round
-            if poly.isAlternate {
-                r.lineWidth   = 4
-                r.strokeColor = UIColor.systemGray.withAlphaComponent(0.35)
-                r.lineDashPattern = [8, 6]
-            } else {
-                r.lineWidth = 6
-                switch poly.trafficLevel {
-                case .clear:    r.strokeColor = UIColor(red: 0,    green: 0.898, blue: 0.455, alpha: 1)
-                case .moderate: r.strokeColor = UIColor(red: 1,    green: 0.75,  blue: 0,     alpha: 1)
-                case .heavy:    r.strokeColor = UIColor(red: 0.98, green: 0.27,  blue: 0.27,  alpha: 1)
-                case .unknown:  r.strokeColor = UIColor(red: 0,    green: 0.898, blue: 0.455, alpha: 0.5)
+            if let poly = overlay as? TrafficPolyline {
+                let r = MKPolylineRenderer(polyline: poly)
+                r.lineCap = .round; r.lineJoin = .round
+                if poly.isAlternate {
+                    r.lineWidth = 3; r.strokeColor = UIColor.systemGray.withAlphaComponent(0.4)
+                    r.lineDashPattern = [8, 5]
+                } else {
+                    r.lineWidth = 6
+                    switch poly.trafficLevel {
+                    case .clear:    r.strokeColor = UIColor(red:0,    green:0.898, blue:0.455, alpha:1)
+                    case .moderate: r.strokeColor = UIColor(red:1,    green:0.75,  blue:0,     alpha:1)
+                    case .heavy:    r.strokeColor = UIColor(red:0.98, green:0.27,  blue:0.27,  alpha:1)
+                    case .unknown:  r.strokeColor = UIColor(red:0,    green:0.898, blue:0.455, alpha:0.6)
+                    }
                 }
+                return r
             }
-            return r
+            // Fallback straight line
+            if let poly = overlay as? MKPolyline {
+                let r = MKPolylineRenderer(polyline: poly)
+                r.strokeColor = UIColor(red:0, green:0.898, blue:0.455, alpha:0.6)
+                r.lineWidth = 4; r.lineDashPattern = [6, 4]; return r
+            }
+            return MKOverlayRenderer(overlay: overlay)
         }
 
         func mapView(_ map: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
             guard !(annotation is MKUserLocation) else { return nil }
-            let reuseId = "etaxi-pin"
-            let view = (map.dequeueReusableAnnotationView(withIdentifier: reuseId)
-                        ?? MKMarkerAnnotationView(annotation: annotation, reuseIdentifier: reuseId))
-            if let m = view as? MKMarkerAnnotationView {
-                m.annotation = annotation
-                let t = annotation.title ?? ""
-                if t == "Driver" {
-                    m.glyphText      = "🚗"
-                    m.markerTintColor = UIColor(red: 0, green: 0.898, blue: 0.455, alpha: 1)
-                } else if t == "Pickup" {
-                    m.glyphImage      = UIImage(systemName: "figure.wave")
-                    m.markerTintColor = UIColor(red: 0, green: 0.898, blue: 0.455, alpha: 1)
-                } else {
-                    m.glyphImage      = UIImage(systemName: "flag.checkered")
-                    m.markerTintColor = UIColor(red: 1, green: 0.6, blue: 0, alpha: 1)
-                }
-                m.canShowCallout = true
+            if annotation is ETaxiDriverPin {
+                let id = "driver-car"
+                let v = (map.dequeueReusableAnnotationView(withIdentifier: id)
+                         ?? MKAnnotationView(annotation: annotation, reuseIdentifier: id))
+                v.annotation = annotation
+                // Car emoji as image — scales well on all device sizes
+                let label = UILabel()
+                label.text = "🚗"; label.font = .systemFont(ofSize: 28)
+                label.sizeToFit()
+                UIGraphicsBeginImageContextWithOptions(label.bounds.size, false, 0)
+                label.layer.render(in: UIGraphicsGetCurrentContext()!)
+                v.image  = UIGraphicsGetImageFromCurrentImageContext()
+                UIGraphicsEndImageContext()
+                v.centerOffset = CGPoint(x: 0, y: -label.bounds.height / 2)
+                v.canShowCallout = false
+                return v
             }
-            return view
+            let id = "dest-pin"
+            let v = (map.dequeueReusableAnnotationView(withIdentifier: id) as? MKMarkerAnnotationView)
+                    ?? MKMarkerAnnotationView(annotation: annotation, reuseIdentifier: id)
+            v.annotation = annotation
+            let t = annotation.title ?? ""
+            if t == "Pickup" {
+                v.glyphImage      = UIImage(systemName: "figure.wave")
+                v.markerTintColor = UIColor(red:0, green:0.898, blue:0.455, alpha:1)
+            } else {
+                v.glyphImage      = UIImage(systemName: "flag.checkered")
+                v.markerTintColor = UIColor(red:1, green:0.6, blue:0, alpha:1)
+            }
+            v.canShowCallout = true
+            return v
         }
+    }
+}
+
+// Custom annotation class for driver pin (allows smooth coordinate update)
+final class ETaxiDriverPin: NSObject, MKAnnotation {
+    @objc dynamic var coordinate: CLLocationCoordinate2D
+    var title: String? = "Driver"
+    init(coordinate: CLLocationCoordinate2D = .init(latitude: 0, longitude: 0)) {
+        self.coordinate = coordinate
     }
 }
 
